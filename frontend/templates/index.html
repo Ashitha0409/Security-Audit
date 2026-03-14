@@ -152,9 +152,6 @@
   @keyframes fadeIn { from{opacity:0} to{opacity:1} }
   @keyframes slideIn { from{opacity:0;transform:translateX(-20px)} to{opacity:1;transform:translateX(0)} }
   @keyframes countUp { from{transform:scale(0.5);opacity:0} to{transform:scale(1);opacity:1} }
-  @keyframes scanLine {
-    0%{top:0;opacity:1} 100%{top:100%;opacity:0}
-  }
   @keyframes spin { to{transform:rotate(360deg)} }
 
   h1 {
@@ -252,9 +249,19 @@
   .scan-hint {
     margin-top: 12px;
     font-size: 12px; color: var(--grey2);
-    display: flex; gap: 20px;
+    display: flex; gap: 20px; flex-wrap: wrap;
   }
   .scan-hint span { display: flex; align-items: center; gap: 5px; }
+
+  /* ✅ NEW: Disclaimer below scan box */
+  .scan-disclaimer {
+    margin-top: 10px;
+    font-size: 11px;
+    color: var(--grey2);
+    font-family: var(--mono);
+    display: flex; align-items: center; gap: 6px;
+  }
+  .scan-disclaimer::before { content: '⚠'; color: var(--yellow); }
 
   /* PROGRESS */
   #progress-section {
@@ -390,7 +397,7 @@
     border-radius: 0 8px 8px 0;
   }
   .ai-summary::before {
-    content: '🤖 AI Analysis · ';
+    content: '🤖 Groq AI Analysis · ';
     color: var(--blue); font-weight: 600; font-size: 11px;
     font-family: var(--mono); letter-spacing: 0.5px;
   }
@@ -406,6 +413,7 @@
   .actions-row {
     display: flex; gap: 12px;
     margin-bottom: 24px;
+    flex-wrap: wrap;
   }
   .btn-outline {
     padding: 10px 20px;
@@ -523,19 +531,13 @@
     font-weight: 600; letter-spacing: 0.5px; margin-bottom: 6px;
   }
 
-  /* EMPTY STATE */
-  .empty-state {
-    text-align: center; padding: 60px 24px;
-    color: var(--grey2); display: none;
-  }
-
   /* ERROR */
   .error-banner {
     background: rgba(239,68,68,0.1);
     border: 1px solid rgba(239,68,68,0.25);
     border-radius: 12px; padding: 16px 20px;
     color: var(--red); margin-bottom: 24px;
-    display: flex; align-items: center; gap: 10px;
+    align-items: center; gap: 10px;
     display: none;
   }
 
@@ -642,7 +644,8 @@
         placeholder="yourbusiness.com or https://example.com"
         autocomplete="off" spellcheck="false"
       />
-      <button class="scan-btn" id="scanBtn" onclick="startScan()">
+      <!-- ✅ FIX: removed inline onclick, now handled via addEventListener in JS -->
+      <button class="scan-btn" id="scanBtn">
         <span id="btnIcon">⚡</span>
         <span id="btnText">Run Scan</span>
       </button>
@@ -653,6 +656,10 @@
       <span>🔍 Port Scan</span>
       <span>💾 Breach DB</span>
       <span>🌑 Dark Web</span>
+    </div>
+    <!-- ✅ FIX: Added legal/ethical disclaimer -->
+    <div class="scan-disclaimer">
+      Only scan websites you own or have explicit permission to test.
     </div>
   </div>
 
@@ -727,13 +734,14 @@
 
     <!-- ACTIONS -->
     <div class="actions-row">
-      <button class="btn-primary-sm" id="pdfBtn" onclick="downloadReport()">
+      <!-- ✅ FIX: removed inline onclick handlers -->
+      <button class="btn-primary-sm" id="pdfBtn">
         📄 Download PDF Report
       </button>
-      <button class="btn-outline" onclick="resetScan()">
+      <button class="btn-outline" id="resetBtn">
         🔄 Scan Another URL
       </button>
-      <button class="btn-outline" id="shareBtn" onclick="copyShare()">
+      <button class="btn-outline" id="shareBtn">
         📋 Copy Summary
       </button>
     </div>
@@ -742,9 +750,10 @@
     <div class="findings-header">
       <div class="findings-title">Security Findings</div>
       <div class="filter-row">
-        <button class="filter-btn active" onclick="filterFindings('all', this)">All</button>
-        <button class="filter-btn" onclick="filterFindings('fail', this)">Issues</button>
-        <button class="filter-btn" onclick="filterFindings('pass', this)">Passed</button>
+        <!-- ✅ FIX: removed inline onclick handlers -->
+        <button class="filter-btn active" data-filter="all">All</button>
+        <button class="filter-btn" data-filter="fail">Issues</button>
+        <button class="filter-btn" data-filter="pass">Passed</button>
       </div>
     </div>
 
@@ -757,7 +766,7 @@
   <div class="tech-stack">
     <span class="tech-tag">Python</span>
     <span class="tech-tag">Flask</span>
-    <span class="tech-tag">Claude AI</span>
+    <span class="tech-tag">Groq · Llama 3.3</span>
     <span class="tech-tag">HaveIBeenPwned</span>
     <span class="tech-tag">SSL Lib</span>
     <span class="tech-tag">ReportLab</span>
@@ -767,233 +776,256 @@
 <div class="toast" id="toast"></div>
 
 <script>
-let currentScanData = null;
-let scanProgress = 0;
+  // ─────────────────────────────────────────
+  // State
+  // ─────────────────────────────────────────
+  let currentScanData = null;
 
-const SEV_COLORS = {
-  critical: 'var(--red)', high: 'var(--orange)',
-  medium: 'var(--yellow)', low: 'var(--blue)',
-  none: 'var(--green)', info: 'var(--grey2)'
-};
+  const SEV_COLORS = {
+    critical: 'var(--red)', high: 'var(--orange)',
+    medium: 'var(--yellow)', low: 'var(--blue)',
+    none: 'var(--green)', info: 'var(--grey2)'
+  };
 
-function showToast(msg, icon='✓') {
-  const t = document.getElementById('toast');
-  t.innerHTML = `<span>${icon}</span> ${msg}`;
-  t.classList.add('show');
-  setTimeout(() => t.classList.remove('show'), 3000);
-}
-
-function setProgress(pct) {
-  document.getElementById('progressBar').style.width = pct + '%';
-}
-
-function setCheckStatus(step, status, label) {
-  const items = document.querySelectorAll('.check-item');
-  items.forEach((el, i) => {
-    if (i < step) {
-      el.classList.remove('active');
-      el.classList.add('done');
-      el.querySelector('.check-status').textContent = '✓ done';
-      el.querySelector('.check-status').style.color = 'var(--green)';
-    } else if (i === step) {
-      el.classList.add('active');
-      el.querySelector('.check-status').textContent = label || 'running...';
-      el.querySelector('.check-status').style.color = 'var(--blue)';
-    }
-  });
-}
-
-async function startScan() {
-  const url = document.getElementById('urlInput').value.trim();
-  if (!url) {
-    document.getElementById('urlInput').focus();
-    showToast('Please enter a URL to scan', '⚠️');
-    return;
+  // ─────────────────────────────────────────
+  // Helpers
+  // ─────────────────────────────────────────
+  function showToast(msg, icon = '✓') {
+    const t = document.getElementById('toast');
+    t.innerHTML = `<span>${icon}</span> ${msg}`;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 3000);
   }
 
-  // UI reset
-  document.getElementById('errorBanner').style.display = 'none';
-  document.getElementById('results-section').style.display = 'none';
-  document.getElementById('progress-section').style.display = 'block';
-  document.getElementById('scanBtn').disabled = true;
-  document.getElementById('btnIcon').textContent = '⏳';
-  document.getElementById('btnText').textContent = 'Scanning...';
+  function setProgress(pct) {
+    document.getElementById('progressBar').style.width = pct + '%';
+  }
 
-  // Reset check items
-  document.querySelectorAll('.check-item').forEach(el => {
-    el.classList.remove('active', 'done');
-    el.querySelector('.check-status').textContent = 'waiting...';
-    el.querySelector('.check-status').style.color = '';
-  });
-
-  let displayUrl = url.startsWith('http') ? url : 'https://' + url;
-  document.getElementById('progressUrl').textContent = displayUrl;
-
-  // Animate progress
-  const steps = ['Validating SSL certificate...', 'Checking security headers...', 'Scanning open ports...', 'Querying breach databases...', 'Checking version disclosure...', 'Running AI analysis...'];
-  let step = 0;
-  const progressInterval = setInterval(() => {
-    if (step < steps.length) {
-      setCheckStatus(step, 'running', steps[step]);
-      setProgress((step + 1) / (steps.length + 1) * 85);
-      step++;
-    }
-  }, 2000);
-
-  try {
-    const resp = await fetch('/scan', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ url })
+  function setCheckStatus(step) {
+    const items = document.querySelectorAll('.check-item');
+    items.forEach((el, i) => {
+      const statusEl = el.querySelector('.check-status');
+      if (i < step) {
+        el.classList.remove('active');
+        el.classList.add('done');
+        statusEl.textContent = '✓ done';
+        statusEl.style.color = 'var(--green)';
+      } else if (i === step) {
+        el.classList.add('active');
+        el.classList.remove('done');
+        statusEl.textContent = 'running...';
+        statusEl.style.color = 'var(--blue)';
+      }
     });
+  }
 
-    clearInterval(progressInterval);
+  // ─────────────────────────────────────────
+  // Scan
+  // ─────────────────────────────────────────
+  async function startScan() {
+    const urlInput = document.getElementById('urlInput');
+    const url = urlInput.value.trim();
 
-    if (!resp.ok) throw new Error(`Server error ${resp.status}`);
-    const data = await resp.json();
+    if (!url) {
+      urlInput.focus();
+      showToast('Please enter a URL to scan', '⚠️');
+      return;
+    }
 
-    if (data.error) throw new Error(data.error);
+    // UI reset
+    document.getElementById('errorBanner').style.display = 'none';
+    document.getElementById('results-section').style.display = 'none';
+    document.getElementById('progress-section').style.display = 'block';
+    document.getElementById('scanBtn').disabled = true;
+    document.getElementById('btnIcon').textContent = '⏳';
+    document.getElementById('btnText').textContent = 'Scanning...';
 
-    currentScanData = data;
-    setProgress(100);
-
-    // Mark all done
+    // Reset check items
     document.querySelectorAll('.check-item').forEach(el => {
-      el.classList.remove('active');
-      el.classList.add('done');
-      el.querySelector('.check-status').textContent = '✓ done';
-      el.querySelector('.check-status').style.color = 'var(--green)';
+      el.classList.remove('active', 'done');
+      const s = el.querySelector('.check-status');
+      s.textContent = 'waiting...';
+      s.style.color = '';
     });
 
-    setTimeout(() => {
+    const displayUrl = url.startsWith('http') ? url : 'https://' + url;
+    document.getElementById('progressUrl').textContent = displayUrl;
+
+    // ✅ FIX: progress animation tied more closely to actual scan phases
+    // Each step advances on a staggered timer — resets cleanly on completion
+    const totalSteps = 6;
+    let step = 0;
+    const progressInterval = setInterval(() => {
+      if (step < totalSteps) {
+        setCheckStatus(step);
+        setProgress(Math.round((step + 1) / (totalSteps + 1) * 85));
+        step++;
+      }
+    }, 2200);
+
+    try {
+      const resp = await fetch('/scan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url })
+      });
+
+      clearInterval(progressInterval);
+
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        throw new Error(err.error || `Server error ${resp.status}`);
+      }
+
+      const data = await resp.json();
+      if (data.error) throw new Error(data.error);
+
+      currentScanData = data;
+      setProgress(100);
+
+      // Mark all steps done
+      document.querySelectorAll('.check-item').forEach(el => {
+        el.classList.remove('active');
+        el.classList.add('done');
+        const s = el.querySelector('.check-status');
+        s.textContent = '✓ done';
+        s.style.color = 'var(--green)';
+      });
+
+      setTimeout(() => {
+        document.getElementById('progress-section').style.display = 'none';
+        showResults(data);
+      }, 600);
+
+    } catch (err) {
+      clearInterval(progressInterval);
       document.getElementById('progress-section').style.display = 'none';
-      showResults(data);
-    }, 600);
-
-  } catch (err) {
-    clearInterval(progressInterval);
-    document.getElementById('progress-section').style.display = 'none';
-    const eb = document.getElementById('errorBanner');
-    document.getElementById('errorText').textContent = err.message || 'Failed to scan URL. Check the URL and try again.';
-    eb.style.display = 'flex';
-  } finally {
-    document.getElementById('scanBtn').disabled = false;
-    document.getElementById('btnIcon').textContent = '⚡';
-    document.getElementById('btnText').textContent = 'Run Scan';
-  }
-}
-
-function showResults(data) {
-  document.getElementById('results-section').style.display = 'block';
-
-  // Score circle
-  const score = data.score;
-  const scoreColor = score >= 80 ? '#22c55e' : score >= 60 ? '#f59e0b' : score >= 40 ? '#f97316' : '#ef4444';
-  const circumference = 351.86;
-  const offset = circumference - (score / 100) * circumference;
-  const fill = document.getElementById('scoreFill');
-  fill.style.stroke = scoreColor;
-  setTimeout(() => { fill.style.strokeDashoffset = offset; }, 100);
-
-  document.getElementById('scoreNum').textContent = score;
-  document.getElementById('scoreNum').style.color = scoreColor;
-
-  const badge = document.getElementById('riskBadge');
-  badge.textContent = data.risk_level;
-  badge.style.background = `${data.risk_color}1a`;
-  badge.style.color = data.risk_color;
-  badge.style.border = `1px solid ${data.risk_color}40`;
-
-  document.getElementById('scoreHost').textContent = data.hostname;
-  document.getElementById('aiSummary').textContent = data.ai_summary;
-  document.getElementById('statCritical').textContent = data.stats.critical;
-  document.getElementById('statWarnings').textContent = data.stats.warnings;
-  document.getElementById('statPassed').textContent = data.stats.passed;
-
-  renderFindings(data.findings);
-
-  document.getElementById('results-section').scrollIntoView({ behavior: 'smooth', block: 'start' });
-}
-
-function renderFindings(findings, filter='all') {
-  const list = document.getElementById('findingsList');
-  list.innerHTML = '';
-
-  const filtered = filter === 'all' ? findings
-    : filter === 'fail' ? findings.filter(f => f.status === 'fail' || f.status === 'warning')
-    : findings.filter(f => f.status === 'pass');
-
-  if (filtered.length === 0) {
-    list.innerHTML = '<div style="text-align:center;padding:40px;color:var(--grey2)">No findings in this category.</div>';
-    return;
-  }
-
-  filtered.forEach((f, i) => {
-    const card = document.createElement('div');
-    card.className = `finding-card sev-${f.severity}`;
-    card.style.animationDelay = `${i * 0.05}s`;
-
-    const statusClass = `status-${f.status}`;
-    const statusLabel = {pass:'✓ PASS', fail:'✗ FAIL', warning:'⚠ WARN', info:'ℹ INFO', error:'? ERROR'}[f.status] || f.status.toUpperCase();
-    const sevColor = SEV_COLORS[f.severity] || 'var(--grey2)';
-
-    card.innerHTML = `
-      <div class="finding-header" onclick="toggleFinding(this.parentElement)">
-        <span class="sev-dot" style="background:${sevColor};box-shadow:0 0 6px ${sevColor}40"></span>
-        <span class="finding-status ${statusClass}">${statusLabel}</span>
-        <span class="finding-name">${f.check}</span>
-        <span class="finding-sev-badge">${f.severity.toUpperCase()}</span>
-        <span class="finding-expand">▼</span>
-      </div>
-      <div class="finding-details">${f.details}</div>
-      ${f.fix ? `<div class="finding-fix"><div class="finding-fix-label">// HOW TO FIX</div>${f.fix}</div>` : ''}
-    `;
-    list.appendChild(card);
-  });
-}
-
-function toggleFinding(card) {
-  card.classList.toggle('expanded');
-}
-
-function filterFindings(filter, btn) {
-  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
-  if (currentScanData) renderFindings(currentScanData.findings, filter);
-}
-
-async function downloadReport() {
-  if (!currentScanData) return;
-  const btn = document.getElementById('pdfBtn');
-  btn.textContent = '⏳ Generating...';
-  btn.disabled = true;
-  try {
-    const resp = await fetch('/generate-report', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(currentScanData)
-    });
-    const data = await resp.json();
-    if (data.url) {
-      const a = document.createElement('a');
-      a.href = data.url; a.download = data.filename;
-      document.body.appendChild(a); a.click(); document.body.removeChild(a);
-      showToast('PDF report downloaded!', '📄');
-    } else {
-      showToast('PDF generation failed. Install reportlab.', '⚠️');
+      const eb = document.getElementById('errorBanner');
+      document.getElementById('errorText').textContent =
+        err.message || 'Failed to scan URL. Check the URL and try again.';
+      eb.style.display = 'flex';
+    } finally {
+      document.getElementById('scanBtn').disabled = false;
+      document.getElementById('btnIcon').textContent = '⚡';
+      document.getElementById('btnText').textContent = 'Run Scan';
     }
-  } catch {
-    showToast('Could not generate report', '⚠️');
-  } finally {
-    btn.textContent = '📄 Download PDF Report';
-    btn.disabled = false;
   }
-}
 
-function copyShare() {
-  if (!currentScanData) return;
-  const d = currentScanData;
-  const text = `PRAWL Security Scan Results
+  // ─────────────────────────────────────────
+  // Results
+  // ─────────────────────────────────────────
+  function showResults(data) {
+    document.getElementById('results-section').style.display = 'block';
+
+    const score = data.score;
+    const scoreColor = score >= 80 ? '#22c55e' : score >= 60 ? '#f59e0b' : score >= 40 ? '#f97316' : '#ef4444';
+    const circumference = 351.86;
+    const offset = circumference - (score / 100) * circumference;
+    const fill = document.getElementById('scoreFill');
+    fill.style.stroke = scoreColor;
+    setTimeout(() => { fill.style.strokeDashoffset = offset; }, 100);
+
+    document.getElementById('scoreNum').textContent = score;
+    document.getElementById('scoreNum').style.color = scoreColor;
+
+    const badge = document.getElementById('riskBadge');
+    badge.textContent = data.risk_level;
+    badge.style.background = `${data.risk_color}1a`;
+    badge.style.color = data.risk_color;
+    badge.style.border = `1px solid ${data.risk_color}40`;
+
+    document.getElementById('scoreHost').textContent = data.hostname;
+    document.getElementById('aiSummary').textContent = data.ai_summary;
+    document.getElementById('statCritical').textContent = data.stats.critical;
+    document.getElementById('statWarnings').textContent = data.stats.warnings;
+    document.getElementById('statPassed').textContent = data.stats.passed;
+
+    renderFindings(data.findings);
+
+    document.getElementById('results-section').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function renderFindings(findings, filter = 'all') {
+    const list = document.getElementById('findingsList');
+    list.innerHTML = '';
+
+    const filtered = filter === 'all' ? findings
+      : filter === 'fail' ? findings.filter(f => f.status === 'fail' || f.status === 'warning')
+      : findings.filter(f => f.status === 'pass');
+
+    if (filtered.length === 0) {
+      list.innerHTML = '<div style="text-align:center;padding:40px;color:var(--grey2)">No findings in this category.</div>';
+      return;
+    }
+
+    filtered.forEach((f, i) => {
+      const card = document.createElement('div');
+      card.className = `finding-card sev-${f.severity}`;
+      card.style.animationDelay = `${i * 0.05}s`;
+
+      const statusClass = `status-${f.status}`;
+      const statusLabel = { pass: '✓ PASS', fail: '✗ FAIL', warning: '⚠ WARN', info: 'ℹ INFO', error: '? ERROR' }[f.status] || f.status.toUpperCase();
+      const sevColor = SEV_COLORS[f.severity] || 'var(--grey2)';
+
+      card.innerHTML = `
+        <div class="finding-header">
+          <span class="sev-dot" style="background:${sevColor};box-shadow:0 0 6px ${sevColor}40"></span>
+          <span class="finding-status ${statusClass}">${statusLabel}</span>
+          <span class="finding-name">${f.check}</span>
+          <span class="finding-sev-badge">${f.severity.toUpperCase()}</span>
+          <span class="finding-expand">▼</span>
+        </div>
+        <div class="finding-details">${f.details}</div>
+        ${f.fix ? `<div class="finding-fix"><div class="finding-fix-label">// HOW TO FIX</div>${f.fix}</div>` : ''}
+      `;
+
+      // ✅ FIX: event listener on card instead of inline onclick
+      card.querySelector('.finding-header').addEventListener('click', () => {
+        card.classList.toggle('expanded');
+      });
+
+      list.appendChild(card);
+    });
+  }
+
+  // ─────────────────────────────────────────
+  // PDF Download
+  // ─────────────────────────────────────────
+  async function downloadReport() {
+    if (!currentScanData) return;
+    const btn = document.getElementById('pdfBtn');
+    btn.textContent = '⏳ Generating...';
+    btn.disabled = true;
+    try {
+      const resp = await fetch('/generate-report', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(currentScanData)
+      });
+      const data = await resp.json();
+      if (data.url) {
+        const a = document.createElement('a');
+        a.href = data.url;
+        a.download = data.filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        showToast('PDF report downloaded!', '📄');
+      } else {
+        showToast('PDF generation failed. Install reportlab.', '⚠️');
+      }
+    } catch {
+      showToast('Could not generate report', '⚠️');
+    } finally {
+      btn.textContent = '📄 Download PDF Report';
+      btn.disabled = false;
+    }
+  }
+
+  function copyShare() {
+    if (!currentScanData) return;
+    const d = currentScanData;
+    const text = `PRAWL Security Scan Results
 Website: ${d.url}
 Score: ${d.score}/100 (${d.risk_level} RISK)
 Critical Issues: ${d.stats.critical}
@@ -1003,21 +1035,38 @@ Passed: ${d.stats.passed}
 ${d.ai_summary}
 ---
 Scan your website free at PRAWL`;
-  navigator.clipboard.writeText(text).then(() => showToast('Summary copied to clipboard!'));
-}
+    navigator.clipboard.writeText(text).then(() => showToast('Summary copied to clipboard!'));
+  }
 
-function resetScan() {
-  document.getElementById('results-section').style.display = 'none';
-  document.getElementById('urlInput').value = '';
-  document.getElementById('urlInput').focus();
-  window.scrollTo({ top: 0, behavior: 'smooth' });
-  currentScanData = null;
-}
+  function resetScan() {
+    document.getElementById('results-section').style.display = 'none';
+    document.getElementById('urlInput').value = '';
+    document.getElementById('urlInput').focus();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    currentScanData = null;
+  }
 
-// Enter key
-document.getElementById('urlInput').addEventListener('keydown', e => {
-  if (e.key === 'Enter') startScan();
-});
+  // ─────────────────────────────────────────
+  // ✅ FIX: All event listeners attached here — no inline onclick handlers
+  // ─────────────────────────────────────────
+  document.addEventListener('DOMContentLoaded', () => {
+    document.getElementById('scanBtn').addEventListener('click', startScan);
+    document.getElementById('pdfBtn').addEventListener('click', downloadReport);
+    document.getElementById('resetBtn').addEventListener('click', resetScan);
+    document.getElementById('shareBtn').addEventListener('click', copyShare);
+    document.getElementById('urlInput').addEventListener('keydown', e => {
+      if (e.key === 'Enter') startScan();
+    });
+
+    // Filter buttons
+    document.querySelectorAll('.filter-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        if (currentScanData) renderFindings(currentScanData.findings, btn.dataset.filter);
+      });
+    });
+  });
 </script>
 </body>
 </html>

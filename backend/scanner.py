@@ -1,6 +1,8 @@
-import ssl, socket, requests, os
+import ssl, socket, requests, os, logging
 from urllib.parse import urlparse
-from datetime import datetime
+from datetime import datetime, timezone
+
+logger = logging.getLogger(__name__)
 
 SECURITY_HEADERS = [
     'Strict-Transport-Security',
@@ -20,9 +22,14 @@ def check_ssl(hostname):
             s.settimeout(5)
             s.connect((hostname, 443))
             cert = s.getpeercert()
+
         expire_str = cert.get('notAfter', '')
         expire_dt  = datetime.strptime(expire_str, '%b %d %H:%M:%S %Y %Z') if expire_str else None
-        days_left  = (expire_dt - datetime.utcnow()).days if expire_dt else None
+
+        # replaced deprecated datetime.utcnow() with timezone-aware datetime
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        days_left = (expire_dt - now).days if expire_dt else None
+
         if days_left is not None and days_left < 0:
             result.update({
                 'status': 'fail', 'severity': 'critical',
@@ -48,6 +55,8 @@ def check_ssl(hostname):
             'fix': "Install a valid SSL certificate. Use Let's Encrypt for free SSL."
         })
     except Exception as e:
+        # log instead of silent pass
+        logger.warning(f"SSL check failed for {hostname}: {e}")
         result.update({
             'status': 'fail', 'severity': 'high',
             'details': f'Could not connect over HTTPS: {str(e)}',
@@ -59,14 +68,13 @@ def check_ssl(hostname):
 def check_headers(url):
     results = []
     try:
-        # Always use clean HTTPS URL — never check HTTP response headers
         parsed    = urlparse(url)
         hostname  = parsed.hostname or parsed.path.split('/')[0]
         https_url = f'https://{hostname}'
 
         r = requests.get(
             https_url, timeout=8, allow_redirects=True,
-            headers={'User-Agent': 'Mozilla/5.0 (compatible; CyberShield/1.0)'}
+            headers={'User-Agent': 'Mozilla/5.0 (compatible; PRAWL/1.0)'}
         )
         headers = {k.lower(): v for k, v in r.headers.items()}
 
@@ -80,11 +88,11 @@ def check_headers(url):
                 'fix':      '' if found else get_header_fix(h),
             })
 
-        # HTTPS redirect — follow all redirects and check final URL
+        # HTTPS redirect check
         try:
             http_r = requests.get(
                 f'http://{hostname}', timeout=5, allow_redirects=True,
-                headers={'User-Agent': 'Mozilla/5.0 (compatible; CyberShield/1.0)'}
+                headers={'User-Agent': 'Mozilla/5.0 (compatible; PRAWL/1.0)'}
             )
             if http_r.url.startswith('https://'):
                 results.append({'check': 'HTTPS Redirect', 'status': 'pass', 'severity': 'none',
@@ -93,12 +101,14 @@ def check_headers(url):
                 results.append({'check': 'HTTPS Redirect', 'status': 'fail', 'severity': 'medium',
                                  'details': 'HTTP traffic is not redirected to HTTPS.',
                                  'fix': 'Configure your web server to redirect all HTTP traffic to HTTPS.'})
-        except:
-            # HTTP port inaccessible = HTTPS-only = good
+        except Exception as e:
+            # ✅ FIX: log the exception instead of bare except
+            logger.debug(f"HTTP redirect check: {e} — assuming HTTPS-only (good)")
             results.append({'check': 'HTTPS Redirect', 'status': 'pass', 'severity': 'none',
                              'details': 'HTTP port not accessible — site is HTTPS only.', 'fix': ''})
 
     except Exception as e:
+        logger.warning(f"Header check failed for {url}: {e}")
         results.append({'check': 'Security Headers', 'status': 'error', 'severity': 'high',
                         'details': str(e), 'fix': 'Check that your website is reachable.'})
     return results
@@ -139,8 +149,9 @@ def check_open_ports(hostname):
                 s2.close()
                 if r2 == 0:
                     open_ports.append({'port': port, 'service': service, 'risky': port in risky_ports})
-        except:
-            pass
+        except Exception as e:
+            # ✅ FIX: log instead of silent pass
+            logger.debug(f"Port {port} check error on {hostname}: {e}")
 
     if not open_ports:
         return [{'check': 'Open Ports', 'status': 'pass', 'severity': 'none',
@@ -171,7 +182,7 @@ def check_breach(domain):
     try:
         r = requests.get(
             f'https://haveibeenpwned.com/api/v3/breacheddomain/{domain}',
-            headers={'User-Agent': 'CyberShield-Security-Scanner'},
+            headers={'User-Agent': 'PRAWL-Security-Scanner'},
             timeout=5
         )
         if r.status_code == 200:
@@ -186,8 +197,10 @@ def check_breach(domain):
         elif r.status_code == 404:
             return {'check': 'Data Breach History', 'status': 'pass', 'severity': 'none',
                     'details': 'Domain not found in any known breach databases.', 'fix': ''}
-    except:
-        pass
+    except Exception as e:
+        # ✅ FIX: log instead of silent pass
+        logger.warning(f"Breach check failed for {domain}: {e}")
+
     return {'check': 'Data Breach History', 'status': 'info', 'severity': 'info',
             'details': 'Could not query breach database (API key required for full access).',
             'fix': 'Sign up for HaveIBeenPwned notifications at haveibeenpwned.com'}
@@ -200,7 +213,7 @@ def check_software_versions(url):
         hostname = parsed.hostname or parsed.path.split('/')[0]
         r = requests.get(
             f'https://{hostname}', timeout=8,
-            headers={'User-Agent': 'Mozilla/5.0 (compatible; CyberShield/1.0)'}
+            headers={'User-Agent': 'Mozilla/5.0 (compatible; PRAWL/1.0)'}
         )
         disclosed = []
         for h in ['Server', 'X-Powered-By', 'X-AspNet-Version', 'X-Generator']:
@@ -218,6 +231,8 @@ def check_software_versions(url):
                 'details': 'No software version information leaked in headers.', 'fix': ''
             })
     except Exception as e:
+        # ✅ FIX: log instead of silent pass
+        logger.warning(f"Version check failed for {url}: {e}")
         results.append({'check': 'Software Version Check', 'status': 'error',
                         'severity': 'info', 'details': str(e), 'fix': ''})
     return results
@@ -238,7 +253,8 @@ def calculate_score(findings):
     for total in per_check_totals.values():
         score -= min(total, per_check_cap)
 
-    return max(0, min(score, 88))  # No site is ever 100% secure
+    # ✅ FIX: Raised cap from 88 to 95 — previously a perfect site was penalised unfairly
+    return max(0, min(score, 95))
 
 
 def get_risk_level(score, findings):
@@ -249,32 +265,38 @@ def get_risk_level(score, findings):
 
 
 def generate_ai_summary(url, findings, score):
-    try:
-        from groq import Groq
-        key = os.environ.get('GROQ_API_KEY', '')
-        if not key:
-            return generate_fallback_summary(findings, score)
-
-        client = Groq(api_key=key)
-        issues = [f for f in findings if f['status'] in ['fail', 'warning']]
-        issues_text = '\n'.join([
-            f"- [{f['severity'].upper()}] {f['check']}: {f['details']}"
-            for f in issues[:8]
-        ])
-        response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[{"role": "user", "content": f"""You are CyberShield, AI cybersecurity assistant for Indian small businesses.
+    """
+    Uses Groq (Llama 3.3) for AI summaries if GROQ_API_KEY is set,
+    otherwise falls back to a plain-text rule-based summary.
+    """
+    issues = [f for f in findings if f['status'] in ['fail', 'warning']]
+    issues_text = '\n'.join([
+        f"- [{f['severity'].upper()}] {f['check']}: {f['details']}"
+        for f in issues[:8]
+    ])
+    prompt = f"""You are PRAWL, an AI cybersecurity assistant for Indian small businesses.
 Website: {url} | Score: {score}/100
 Issues found:
 {issues_text or 'No major issues found.'}
 Write exactly 3 sentences in plain English for a non-technical Indian business owner.
 Mention the score, the most critical issue, and one clear action to take today.
-No bullet points. No jargon. Plain paragraph only."""}],
-            max_tokens=250
-        )
-        return response.choices[0].message.content
-    except:
-        return generate_fallback_summary(findings, score)
+No bullet points. No jargon. Plain paragraph only."""
+
+    groq_key = os.environ.get('GROQ_API_KEY', '')
+    if groq_key:
+        try:
+            from groq import Groq
+            client = Groq(api_key=groq_key)
+            response = client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=250
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            logger.warning(f"Groq API failed, using text fallback: {e}")
+
+    return generate_fallback_summary(findings, score)
 
 
 def generate_fallback_summary(findings, score):
@@ -321,5 +343,6 @@ def run_full_scan(url):
             'critical': critical_count, 'warnings': warning_count,
             'passed': pass_count,       'total': len(findings)
         },
-        'scanned_at': datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')
+        # ✅ FIX: replaced deprecated datetime.utcnow()
+        'scanned_at': datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')
     }
