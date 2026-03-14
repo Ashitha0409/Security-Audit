@@ -1,31 +1,30 @@
 from dotenv import load_dotenv
-load_dotenv()  # Load .env file before anything else
+load_dotenv()
 
 from flask import Flask, request, jsonify, render_template, send_from_directory
 from flask_cors import CORS
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from urllib.parse import urlparse
-import os, sys, re, logging
+import os, sys, re, logging, sqlite3, json
+from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.dirname(__file__))
 from scanner import run_full_scan
 from report_generator import generate_pdf_report
+from chatbot import get_chat_response
 
-# Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__, template_folder='../frontend/templates', static_folder='../frontend/static')
 
-# Restrict CORS to your own domain in production
 ALLOWED_ORIGINS = os.environ.get('ALLOWED_ORIGINS', '*')
 if ALLOWED_ORIGINS == '*':
-    CORS(app)  # dev: allow all
+    CORS(app)
 else:
     CORS(app, origins=ALLOWED_ORIGINS.split(','))
 
-# Rate limiting — max 5 scans/min per IP
 limiter = Limiter(
     get_remote_address,
     app=app,
@@ -33,13 +32,63 @@ limiter = Limiter(
     storage_uri="memory://"
 )
 
+# ─── SQLite history setup ───────────────────────────────────────────────────
+DB_PATH = os.path.join(os.path.dirname(__file__), 'prawl_history.db')
+
+def init_db():
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS scan_history (
+                id        INTEGER PRIMARY KEY AUTOINCREMENT,
+                domain    TEXT    NOT NULL,
+                url       TEXT    NOT NULL,
+                score     INTEGER NOT NULL,
+                risk_level TEXT   NOT NULL,
+                stats     TEXT    NOT NULL,
+                scanned_at TEXT   NOT NULL
+            )
+        ''')
+        conn.commit()
+
+def save_scan(result):
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.execute(
+                'INSERT INTO scan_history (domain, url, score, risk_level, stats, scanned_at) VALUES (?,?,?,?,?,?)',
+                (
+                    result['hostname'],
+                    result['url'],
+                    result['score'],
+                    result['risk_level'],
+                    json.dumps(result['stats']),
+                    result['scanned_at']
+                )
+            )
+            conn.commit()
+    except Exception as e:
+        logger.warning(f"Failed to save scan history: {e}")
+
+def get_history(domain):
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            rows = conn.execute(
+                'SELECT score, risk_level, scanned_at FROM scan_history WHERE domain=? ORDER BY id DESC LIMIT 20',
+                (domain,)
+            ).fetchall()
+            return [{'score': r[0], 'risk_level': r[1], 'scanned_at': r[2]} for r in rows]
+    except Exception as e:
+        logger.warning(f"Failed to fetch scan history: {e}")
+        return []
+
+init_db()
+# ────────────────────────────────────────────────────────────────────────────
+
 
 @app.route('/')
 def index():
     return render_template('index.html')
 
 
-# Single /scan route (was duplicated before — second one was silently ignored)
 @app.route('/scan', methods=['POST'])
 @limiter.limit("5 per minute")
 def scan():
@@ -48,29 +97,57 @@ def scan():
         return jsonify({'error': 'Invalid JSON body'}), 400
 
     url = data.get('url', '').strip().rstrip('/')
+    language = data.get('language', 'english').strip().lower()
 
     if not url:
         return jsonify({'error': 'No URL provided'}), 400
 
-    # If user typed multiple URLs, take only the first one
     url = url.split()[0]
 
-    # Add https:// if missing
     if not url.startswith('http://') and not url.startswith('https://'):
         url = 'https://' + url
 
-    # Basic validation
     hostname = urlparse(url).hostname or ''
     if '.' not in hostname:
         return jsonify({'error': 'Please enter a valid website URL (e.g. https://yoursite.com)'}), 400
 
-    logger.info(f"Scan requested for: {hostname}")
+    logger.info(f"Scan requested for: {hostname} (lang={language})")
 
     try:
-        result = run_full_scan(url)
+        result = run_full_scan(url, language=language)
+        save_scan(result)
+        result['history'] = get_history(hostname)
         return jsonify(result)
     except Exception as e:
         logger.error(f"Scan failed for {hostname}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/history/<domain>')
+def history(domain):
+    """Return scan history for a domain as JSON."""
+    return jsonify(get_history(domain))
+
+
+@app.route('/chat', methods=['POST'])
+@limiter.limit("30 per minute")
+def chat():
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'Invalid JSON body'}), 400
+
+    user_message  = data.get('message', '').strip()
+    scan_context  = data.get('scan_context', {})
+    chat_history  = data.get('history', [])
+
+    if not user_message:
+        return jsonify({'error': 'No message provided'}), 400
+
+    try:
+        reply = get_chat_response(user_message, scan_context, chat_history)
+        return jsonify({'reply': reply})
+    except Exception as e:
+        logger.error(f"Chat error: {e}")
         return jsonify({'error': str(e)}), 500
 
 
@@ -93,15 +170,12 @@ def generate_report():
 
 @app.route('/report/<path:filename>')
 def download_report(filename):
-    # Validate filename to prevent directory traversal attacks
     if not re.match(r'^[\w\-\.]+\.pdf$', filename):
         return jsonify({'error': 'Invalid filename'}), 400
-
     reports_dir = os.path.join(os.path.dirname(__file__), 'reports')
     return send_from_directory(reports_dir, filename, as_attachment=True)
 
 
-# debug=True only when explicitly set via env var (never in production)
 if __name__ == '__main__':
     debug_mode = os.environ.get('FLASK_DEBUG', 'false').lower() == 'true'
     port = int(os.environ.get('PORT', 5000))

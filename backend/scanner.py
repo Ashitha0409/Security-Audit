@@ -26,7 +26,7 @@ def check_ssl(hostname):
         expire_str = cert.get('notAfter', '')
         expire_dt  = datetime.strptime(expire_str, '%b %d %H:%M:%S %Y %Z') if expire_str else None
 
-        # replaced deprecated datetime.utcnow() with timezone-aware datetime
+        # ✅ FIX: replaced deprecated datetime.utcnow() with timezone-aware datetime
         now = datetime.now(timezone.utc).replace(tzinfo=None)
         days_left = (expire_dt - now).days if expire_dt else None
 
@@ -55,7 +55,7 @@ def check_ssl(hostname):
             'fix': "Install a valid SSL certificate. Use Let's Encrypt for free SSL."
         })
     except Exception as e:
-        # log instead of silent pass
+        # ✅ FIX: log instead of silent pass
         logger.warning(f"SSL check failed for {hostname}: {e}")
         result.update({
             'status': 'fail', 'severity': 'high',
@@ -264,33 +264,52 @@ def get_risk_level(score, findings):
     return                 'CRITICAL', '#ef4444'
 
 
-def generate_ai_summary(url, findings, score):
+LANGUAGE_INSTRUCTIONS = {
+    'english': 'Write in plain English.',
+    'hindi':   'हिंदी में लिखें। (Write entirely in Hindi script.)',
+    'telugu':  'తెలుగులో రాయండి. (Write entirely in Telugu script.)',
+    'tamil':   'தமிழில் எழுதுங்கள். (Write entirely in Tamil script.)',
+    'kannada': 'ಕನ್ನಡದಲ್ಲಿ ಬರೆಯಿರಿ. (Write entirely in Kannada script.)',
+    'marathi': 'मराठीत लिहा. (Write entirely in Marathi script.)',
+    'bengali': 'বাংলায় লিখুন। (Write entirely in Bengali script.)',
+}
+
+def generate_ai_summary(url, findings, score, language='english'):
     """
     Uses Groq (Llama 3.3) for AI summaries if GROQ_API_KEY is set,
     otherwise falls back to a plain-text rule-based summary.
+    Supports multiple Indian languages via the language parameter.
     """
     issues = [f for f in findings if f['status'] in ['fail', 'warning']]
     issues_text = '\n'.join([
         f"- [{f['severity'].upper()}] {f['check']}: {f['details']}"
         for f in issues[:8]
     ])
+    lang_key = language.lower().strip()
+    lang_instruction = LANGUAGE_INSTRUCTIONS.get(lang_key, LANGUAGE_INSTRUCTIONS['english'])
+
     prompt = f"""You are PRAWL, an AI cybersecurity assistant for Indian small businesses.
 Website: {url} | Score: {score}/100
 Issues found:
 {issues_text or 'No major issues found.'}
-Write exactly 3 sentences in plain English for a non-technical Indian business owner.
+Write exactly 3 sentences for a non-technical Indian business owner.
 Mention the score, the most critical issue, and one clear action to take today.
-No bullet points. No jargon. Plain paragraph only."""
+No bullet points. No jargon. Plain paragraph only.
+Language instruction: {lang_instruction}"""
 
     groq_key = os.environ.get('GROQ_API_KEY', '')
     if groq_key:
         try:
+            import httpx
             from groq import Groq
-            client = Groq(api_key=groq_key)
+            client = Groq(
+                api_key=groq_key,
+                http_client=httpx.Client()
+            )
             response = client.chat.completions.create(
                 model="llama-3.3-70b-versatile",
                 messages=[{"role": "user", "content": prompt}],
-                max_tokens=250
+                max_tokens=350
             )
             return response.choices[0].message.content
         except Exception as e:
@@ -316,7 +335,7 @@ def generate_fallback_summary(findings, score):
                 "Contact your hosting provider today and ask them to fix the critical items on this report.")
 
 
-def run_full_scan(url):
+def run_full_scan(url, language='english'):
     parsed   = urlparse(url)
     hostname = parsed.hostname or parsed.path.split('/')[0]
 
@@ -329,7 +348,7 @@ def run_full_scan(url):
 
     score                  = calculate_score(findings)
     risk_level, risk_color = get_risk_level(score, findings)
-    ai_summary             = generate_ai_summary(url, findings, score)
+    ai_summary             = generate_ai_summary(url, findings, score, language)
 
     critical_count = len([f for f in findings if f['status'] == 'fail'              and f['severity'] in ['critical', 'high']])
     warning_count  = len([f for f in findings if f['status'] in ['warning', 'fail'] and f['severity'] in ['medium', 'low']])
