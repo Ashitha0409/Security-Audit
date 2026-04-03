@@ -6,9 +6,9 @@
 
 ## 🚀 What is PRAWL?
 
-PRAWL is a web-based security audit tool that scans any website for vulnerabilities, misconfigurations, and data breaches — then explains every issue in plain English (or Hindi, Telugu, Tamil, and more) using AI.
+PRAWL is a web-based security audit tool that scans any website for vulnerabilities, misconfigurations, and data breaches — then explains every issue in plain English  using AI.
 
-Built for Indian small business owners who don't have a security team.
+Built for Indian small business owners and also developers who don't have a security team.
 
 ---
 
@@ -112,19 +112,7 @@ http://localhost:5000
 
 ---
 
-## 🌐 Language Support
 
-PRAWL generates AI summaries in 7 languages:
-
-- English
-- हिंदी (Hindi)
-- తెలుగు (Telugu)
-- தமிழ் (Tamil)
-- ಕನ್ನಡ (Kannada)
-- मराठी (Marathi)
-- বাংলা (Bengali)
-
----
 
 ## 🤖 AI Provider Chain
 
