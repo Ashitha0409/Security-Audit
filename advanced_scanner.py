@@ -8,6 +8,7 @@ import subprocess
 import json
 import re
 import xml.etree.ElementTree as ET
+import requests
 from typing import Dict, Any, Tuple
 
 
@@ -50,6 +51,7 @@ def _extract_hostname(url: str) -> str:
     for prefix in ("https://", "http://", "www."):
         if url.lower().startswith(prefix):
             url = url[len(prefix):]
+            break # Avoid multiple stripping
     return url.split("/")[0].split("?")[0].split("#")[0]
 
 
@@ -71,9 +73,14 @@ def check_docker_available() -> Dict[str, Any]:
     out, err, code = _run_docker(["docker", "info", "--format", "{{.ServerVersion}}"], timeout=10)
     if code == 0 and out.strip():
         return {"available": True, "version": out.strip()}
+        
+    error_msg = err.strip() or "Docker daemon not responding. Is Docker Desktop running?"
+    if "permission denied" in error_msg.lower():
+        error_msg = "Docker permission denied. Add user to docker group (sudo usermod -aG docker $USER) or run as root."
+        
     return {
         "available": False,
-        "error": err.strip() or "Docker daemon not responding. Is Docker Desktop running?",
+        "error": error_msg,
     }
 
 
@@ -111,6 +118,7 @@ def run_nmap_scan(target: str) -> Dict[str, Any]:
 
     cmd = [
         "docker", "run", "--rm",
+        "--network=host",
         "instrumentisto/nmap",
         "-sV",                        # service/version detection
         "--version-intensity", "3",   # balanced speed vs accuracy
@@ -210,10 +218,11 @@ def run_nikto_scan(target: str) -> Dict[str, Any]:
 
     cmd = [
         "docker", "run", "--rm",
+        "--network=host",
         "frapsoft/nikto",
         "-h",            target,
         "-maxtime",      "90s",
-        "-nointeractive",
+        "-ask",          "no",    # prevents interactive prompts that could hang the scanner
         "-Format",       "txt",   # plain text is most reliable across versions
     ]
 
@@ -269,8 +278,11 @@ def _parse_nikto_text(output: str, target: str) -> Dict[str, Any]:
         elif line.startswith("+ ") and len(line) > 4:
             text = line[2:].strip()
 
-            # Skip pure informational lines (start time, target IP, etc.)
-            if any(skip in text.lower() for skip in ["target ip:", "target hostname:", "target port:", "start time:", "end time:", "1 host(s) tested"]):
+            # Skip pure informational lines (start time, target IP, etc.) and Nikto warnings
+            if any(skip in text.lower() for skip in [
+                "target ip:", "target hostname:", "target port:", "start time:", "end time:", 
+                "1 host(s) tested", "error: host maximum execution time", "error: unable to open"
+            ]):
                 continue
 
             result["vulnerabilities"].append({
@@ -311,6 +323,7 @@ def run_sqlmap_scan(target: str, test_forms: bool = True) -> Dict[str, Any]:
 
     cmd = [
         "docker", "run", "--rm",
+        "--network=host",
         "secsi/sqlmap",
         "-u",           target,
         "--batch",                  # never prompt for input
@@ -398,6 +411,8 @@ def _parse_sqlmap_output(output: str, target: str) -> Dict[str, Any]:
 # COMBINED ADVANCED SCAN (all three tools)
 # ──────────────────────────────────────────────
 
+import concurrent.futures
+
 def run_full_advanced_scan(target: str, consent: bool = False) -> Dict[str, Any]:
     """
     Orchestrates Nmap + Nikto + SQLMap.
@@ -413,17 +428,71 @@ def run_full_advanced_scan(target: str, consent: bool = False) -> Dict[str, Any]
             "sqlmap":  None,
         }
 
-    nmap_result   = run_nmap_scan(target)
-    nikto_result  = run_nikto_scan(target)
-    sqlmap_result = (
-        run_sqlmap_scan(target)
-        if consent
-        else {"scan_tool": "sqlmap", "skipped": True, "reason": "User consent not given"}
-    )
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+        f_nmap = executor.submit(run_nmap_scan, target)
+        f_nikto = executor.submit(run_nikto_scan, target)
+        f_sqlmap = executor.submit(run_sqlmap_scan, target) if consent else None
+        f_crt = executor.submit(run_subdomain_scan, target)
+
+        nmap_result = f_nmap.result()
+        nikto_result = f_nikto.result()
+        sqlmap_result = f_sqlmap.result() if f_sqlmap else {"scan_tool": "sqlmap", "skipped": True, "reason": "User consent not given"}
+        crt_result = f_crt.result()
 
     return {
         "target":  target,
         "nmap":    nmap_result,
         "nikto":   nikto_result,
         "sqlmap":  sqlmap_result,
+        "crt_sh":  crt_result,
     }
+
+
+# ──────────────────────────────────────────────
+# OSINT: SUBDOMAIN ENUMERATION (crt.sh)
+# ──────────────────────────────────────────────
+
+def run_subdomain_scan(target: str) -> Dict[str, Any]:
+    """
+    Query crt.sh (Certificate Transparency logs) for subdomains of the target.
+    This is extremely fast and completely stealthy (OSINT).
+    """
+    hostname = _extract_hostname(target)
+    # Strip any 'www.' to get the base domain for wider search
+    if hostname.startswith('www.'):
+        hostname = hostname[4:]
+        
+    result = {
+        "scan_tool": "crt_sh",
+        "target": target,
+        "base_domain": hostname,
+        "subdomains": [],
+        "count": 0,
+        "error": None
+    }
+    
+    try:
+        # User-Agent is required because crt.sh blocks default Python requests UA
+        headers = {'User-Agent': 'PRAWL-Scanner/1.0'}
+        url = f"https://crt.sh/?q=%.{hostname}&output=json"
+        
+        resp = requests.get(url, headers=headers, timeout=15)
+        if resp.status_code == 200:
+            data = resp.json()
+            domain_set = set()
+            for entry in data:
+                # Some entries have multiple domains separated by newlines
+                names = entry.get('name_value', '').split('\\n')
+                for n in names:
+                    n = n.strip().lower()
+                    if n and not n.startswith('*'):  # exclude wildcards
+                        domain_set.add(n)
+            
+            result["subdomains"] = sorted(list(domain_set))
+            result["count"] = len(result["subdomains"])
+        else:
+            result["error"] = f"crt.sh returned status {resp.status_code}"
+    except Exception as e:
+        result["error"] = f"OSINT scan failed: {str(e)}"
+        
+    return result

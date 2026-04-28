@@ -11,13 +11,13 @@
     rel="stylesheet">
   <style>
     :root {
-      --black: #030712;
-      --dark: #0a0f1e;
-      --dark2: #0d1527;
-      --dark3: #111827;
-      --card: #0f172a;
-      --border: #1e2d4a;
-      --border2: #1d2d44;
+      --black: #050511;
+      --dark: #070919;
+      --dark2: rgba(12, 15, 35, 0.6);
+      --dark3: rgba(17, 24, 45, 0.5);
+      --card: rgba(15, 20, 45, 0.45);
+      --border: rgba(45, 55, 95, 0.4);
+      --border2: rgba(55, 65, 110, 0.3);
       --blue: #0ea5e9;
       --blue2: #38bdf8;
       --blue3: #7dd3fc;
@@ -74,6 +74,19 @@
       transform: translateX(-50%);
       pointer-events: none;
       z-index: 0;
+    }
+
+    
+    /* Premium Blurry Shapes */
+    .bg-shape-1 {
+      position: fixed; top: -15%; left: -10%; width: 50vw; height: 50vw;
+      background: radial-gradient(circle, rgba(99, 102, 241, 0.12) 0%, transparent 65%);
+      filter: blur(80px); pointer-events: none; z-index: 0;
+    }
+    .bg-shape-2 {
+      position: fixed; bottom: -20%; right: -10%; width: 60vw; height: 60vw;
+      background: radial-gradient(circle, rgba(14, 165, 233, 0.08) 0%, transparent 65%);
+      filter: blur(100px); pointer-events: none; z-index: 0;
     }
 
     /* NAV */
@@ -330,6 +343,8 @@
     /* SCAN BOX */
     .scan-box {
       background: var(--card);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
       border: 1px solid var(--border);
       border-radius: 16px;
       padding: 32px;
@@ -405,7 +420,8 @@
     }
 
     .scan-btn:hover {
-      transform: translateY(-1px);
+      transform: translateY(-2px);
+      box-shadow: 0 12px 35px rgba(99, 102, 241, 0.4);
       box-shadow: 0 8px 24px rgba(14, 165, 233, 0.35);
     }
 
@@ -483,6 +499,8 @@
     /* ── Score history chart ────────────────────────── */
     .history-section {
       background: var(--card);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
       border: 1px solid var(--border);
       border-radius: 16px;
       padding: 24px 28px;
@@ -554,6 +572,8 @@
     #progress-section {
       display: none;
       background: var(--card);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
       border: 1px solid var(--border);
       border-radius: 16px;
       padding: 32px;
@@ -677,6 +697,8 @@
     /* SCORE CARD */
     .score-card {
       background: var(--card);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
       border: 1px solid var(--border);
       border-radius: 16px;
       padding: 32px;
@@ -925,11 +947,13 @@
 
     .finding-card {
       background: var(--card);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
       border: 1px solid var(--border);
       border-radius: 12px;
       overflow: hidden;
       animation: slideIn 0.4s ease both;
-      transition: border-color 0.2s;
+      transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.3s,  border-color 0.2s;
       cursor: pointer;
     }
 
@@ -1087,6 +1111,8 @@
       bottom: 32px;
       right: 32px;
       background: var(--card);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
       border: 1px solid var(--border);
       border-radius: 10px;
       padding: 14px 20px;
@@ -1160,6 +1186,8 @@
       width: 360px;
       max-height: 520px;
       background: var(--card);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
       border: 1px solid var(--border);
       border-radius: 16px;
       display: none;
@@ -1428,6 +1456,11 @@
       color: #fee2e2;
     }
 
+    .badge-osint {
+      background: #059669;
+      color: #d1fae5;
+    }
+
     .consent-box {
       background: #1c1917;
       border: 1px solid #78350f;
@@ -1494,6 +1527,11 @@
     .adv-tool-result.sqlmap .tool-title {
       background: #7f1d1d;
       color: #fca5a5;
+    }
+
+    .adv-tool-result.osint .tool-title {
+      background: #065f46;
+      color: #6ee7b7;
     }
 
     .adv-tool-result .tool-body {
@@ -1613,6 +1651,8 @@
 </head>
 
 <body>
+  <div class="bg-shape-1"></div>
+  <div class="bg-shape-2"></div>
 
   <div class="bg-glow"></div>
 
@@ -1820,6 +1860,7 @@
         <span class="tool-badge badge-nmap">Nmap</span>
         <span class="tool-badge badge-nikto">Nikto</span>
         <span class="tool-badge badge-sqlmap">SQLMap</span>
+        <span class="tool-badge badge-osint" title="OSINT">crt.sh</span>
       </div>
 
       <!-- Docker not available warning -->
@@ -1849,6 +1890,11 @@
       </div>
 
       <!-- Results rendered here -->
+      <div id="adv-results-osint" class="adv-tool-result osint" style="display:none;">
+        <div class="tool-title">🌐 OSINT — Subdomain Enumeration (crt.sh)</div>
+        <div class="tool-body" id="adv-body-osint"></div>
+      </div>
+
       <div id="adv-results-nmap" class="adv-tool-result nmap" style="display:none;">
         <div class="tool-title">🗺️ Nmap — Port &amp; Service Scan</div>
         <div class="tool-body" id="adv-body-nmap"></div>
@@ -2218,10 +2264,11 @@
       btn.textContent = '⏳ Generating...';
       btn.disabled = true;
       try {
+        const payload = Object.assign({}, currentScanData, { language: selectedLanguage });
         const resp = await fetch('/generate-report', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(currentScanData)
+          body: JSON.stringify(payload)
         });
         const data = await resp.json();
         if (data.url) {
@@ -2406,6 +2453,10 @@ Scan your website free at PRAWL`;
           document.getElementById("btn-advanced-scan").disabled = false;
         } else {
           document.getElementById("docker-warning").style.display = "block";
+          const dMsg = data.message || data.error;
+          if (dMsg) {
+            document.getElementById("docker-warning").innerHTML = "🐋 " + dMsg.replace(/\\n/g, '<br>');
+          }
           document.getElementById("btn-advanced-scan").disabled = true;
         }
       } catch {
@@ -2516,6 +2567,27 @@ Scan your website free at PRAWL`;
       document.getElementById("adv-results-sqlmap").style.display = "block";
     }
 
+    // ── Render OSINT results ──────────────────────────────────────
+    function renderOsint(data) {
+      const el = document.getElementById("adv-body-osint");
+      if (data.error) { el.innerHTML = `<p style="color:#f87171">${data.error}</p>`; return; }
+
+      let html = "";
+      if (data.count > 0) {
+        html += `<p style="color:#4ade80;margin:0 0 .5rem"><strong>✅ Discovered ${data.count} subdomains</strong></p>`;
+        html += `<div style="display: flex; flex-wrap: wrap; gap: 6px;">`;
+        data.subdomains.forEach(sub => {
+          html += `<span style="background:var(--dark2);border:1px solid rgba(110,231,183,0.3);padding:4px 10px;border-radius:6px;font-family:var(--mono);font-size:11px;color:#a7f3d0">${sub}</span>`;
+        });
+        html += `</div>`;
+      } else {
+        html += `<p style="color:#94a3b8">ℹ️ No additional subdomains found for ${data.base_domain}.</p>`;
+      }
+
+      el.innerHTML = html;
+      document.getElementById("adv-results-osint").style.display = "block";
+    }
+
     // ── Main advanced scan function ────────────────────────────────
     async function runAdvancedScan() {
       const url = document.getElementById("urlInput").value.trim();
@@ -2524,7 +2596,7 @@ Scan your website free at PRAWL`;
       const consent = document.getElementById("sqlmap-consent").checked;
 
       // Reset results UI
-      ["nmap", "nikto", "sqlmap"].forEach(t => {
+      ["nmap", "nikto", "sqlmap", "osint"].forEach(t => {
         document.getElementById(`adv-results-${t}`).style.display = "none";
         document.getElementById(`adv-body-${t}`).innerHTML = "";
       });
@@ -2570,13 +2642,19 @@ Scan your website free at PRAWL`;
 
         const data = await res.json();
         if (data.error) { showToast("Error: " + data.error, "⚠️"); return; }
+        
+        // Inject into currentScanData for the AI Chatbot
+        if (typeof currentScanData !== 'undefined' && currentScanData !== null) {
+          currentScanData.advanced_scan = data;
+        }
 
         if (data.nmap)   renderNmap(data.nmap);
         if (data.nikto)  renderNikto(data.nikto);
         if (data.sqlmap) renderSqlmap(data.sqlmap);
+        if (data.crt_sh) renderOsint(data.crt_sh);
 
         showToast("Advanced scan complete!", "🔬");
-        document.getElementById("adv-results-nmap").scrollIntoView({ behavior: "smooth", block: "start" });
+        document.getElementById("adv-results-osint").scrollIntoView({ behavior: "smooth", block: "start" });
 
       } catch (err) {
         clearTimeout(niktoTimer);

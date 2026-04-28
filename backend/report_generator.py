@@ -83,6 +83,21 @@ def generate_pdf_report(scan_result, output_dir=None):
 
         story = []
 
+        # ── Translations ───────────────────────────────────────────────────
+        lang = scan_result.get('language', 'english').lower()
+        t = {
+            'report_title': 'Security Audit Report' if lang == 'english' else 'सुरक्षा ऑडिट रिपोर्ट',
+            'score_label': 'SECURITY SCORE' if lang == 'english' else 'सुरक्षा स्कोर',
+            'risk_level': 'Risk Level:' if lang == 'english' else 'जोखिम का स्तर:',
+            'crit': 'CRITICAL' if lang == 'english' else 'गंभीर',
+            'warn': 'WARNINGS' if lang == 'english' else 'चेतावनियाँ',
+            'pass': 'PASSED' if lang == 'english' else 'पास हुए',
+            'tot': 'TOTAL CHECKS' if lang == 'english' else 'कुल जाँच',
+            'details': 'Detailed Security Findings' if lang == 'english' else 'विस्तृत सुरक्षा निष्कर्ष',
+            'fix': 'HOW TO FIX:' if lang == 'english' else 'कैसे ठीक करें:',
+            'adv_title': 'Advanced Vulnerability Scan & OSINT' if lang == 'english' else 'उन्नत भेद्यता स्कैन और ओसिंट (OSINT)',
+        }
+
         # ── Header banner ──────────────────────────────────────────────────
         # ✅ FIX: CyberShield → PRAWL
         header_data = [[
@@ -91,7 +106,7 @@ def generate_pdf_report(scan_result, output_dir=None):
                 ParagraphStyle('', fontName=UNICODE_FONT_BOLD, fontSize=22, textColor=WHITE)
             ),
             Paragraph(
-                f'<font color="#0ea5e9">Security Audit Report</font><br/>'
+                f'<font color="#0ea5e9">{t["report_title"]}</font><br/>'
                 f'<font color="#9ca3af" size="8">{scan_result["scanned_at"]}</font>',
                 ParagraphStyle('', fontName=UNICODE_FONT, fontSize=11, textColor=BLUE)
             )
@@ -115,11 +130,11 @@ def generate_pdf_report(scan_result, output_dir=None):
         score_data = [[
             Paragraph(
                 f'<font color="{score_color.hexval()}" size="36"><b>{score}</b></font><br/>'
-                f'<font color="#9ca3af" size="9">SECURITY SCORE</font>',
+                f'<font color="#9ca3af" size="9">{t["score_label"]}</font>',
                 ParagraphStyle('', fontName=UNICODE_FONT_BOLD, fontSize=36, alignment=TA_CENTER)
             ),
             Paragraph(
-                f'<font color="#111827" size="11"><b>Risk Level: {scan_result["risk_level"]}</b></font><br/><br/>'
+                f'<font color="#111827" size="11"><b>{t["risk_level"]} {scan_result["risk_level"]}</b></font><br/><br/>'
                 f'<font color="#4b5563" size="9">{ai_summary_text}</font>',
                 ParagraphStyle('', fontName=UNICODE_FONT, fontSize=9, leading=14)
             ),
@@ -136,12 +151,11 @@ def generate_pdf_report(scan_result, output_dir=None):
         story.append(Spacer(1, 0.5*cm))
 
         # ── Stats row ──────────────────────────────────────────────────────
-        stats      = scan_result['stats']
         stat_items = [
-            (str(stats['critical']), 'CRITICAL',     '#ef4444'),
-            (str(stats['warnings']), 'WARNINGS',     '#f59e0b'),
-            (str(stats['passed']),   'PASSED',       '#22c55e'),
-            (str(stats['total']),    'TOTAL CHECKS', '#0ea5e9'),
+            (str(stats['critical']), t['crit'], '#ef4444'),
+            (str(stats['warnings']), t['warn'], '#f59e0b'),
+            (str(stats['passed']),   t['pass'], '#22c55e'),
+            (str(stats['total']),    t['tot'],  '#0ea5e9'),
         ]
         stat_data = [[
             Paragraph(
@@ -162,7 +176,7 @@ def generate_pdf_report(scan_result, output_dir=None):
         story.append(Spacer(1, 0.5*cm))
 
         # ── Findings ───────────────────────────────────────────────────────
-        story.append(Paragraph('Detailed Security Findings', h1_style))
+        story.append(Paragraph(t['details'], h1_style))
 
         sev_colors = {
             'critical': '#ef4444', 'high': '#f97316', 'medium': '#f59e0b',
@@ -214,7 +228,7 @@ def generate_pdf_report(scan_result, output_dir=None):
             if f.get('fix'):
                 fix_data = [[
                     Paragraph(
-                        'HOW TO FIX:',
+                        t['fix'],
                         ParagraphStyle('', fontName=UNICODE_FONT_BOLD, fontSize=7, textColor=BLUE)
                     ),
                     Paragraph(
@@ -232,6 +246,87 @@ def generate_pdf_report(scan_result, output_dir=None):
                 ]))
                 story.append(fix_table)
             story.append(Spacer(1, 0.2*cm))
+
+        # ── Advanced Scan OSINT / Docker Findings ──────────────────────────
+        adv = scan_result.get('advanced_scan', {})
+        if adv:
+            story.append(Spacer(1, 0.5*cm))
+            story.append(Paragraph(t['adv_title'], h1_style))
+            
+            nmap = adv.get('nmap', {})
+            if nmap and not nmap.get('error'):
+                risks = nmap.get('risk_findings', [])
+                if risks:
+                    for r in risks:
+                        adv_data = [[
+                            Paragraph(f'<font color="{RED.hexval()}"><b>NMAP: DANGEROUS PORT</b></font>', ParagraphStyle('', fontName=UNICODE_FONT_BOLD, fontSize=8)),
+                            Paragraph(f"<b>Port {r.get('port')} ({r.get('service')})</b><br/>{r.get('description')}", body_style)
+                        ]]
+                        t = Table(adv_data, colWidths=[3.5*cm, 13.5*cm])
+                        t.setStyle(TableStyle([
+                            ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#fff7f7')),
+                            ('BOX', (0,0), (-1,-1), 0.5, RED),
+                            ('VALIGN', (0,0), (-1,-1), 'TOP'),
+                            ('PADDING', (0,0), (-1,-1), 8)
+                        ]))
+                        story.append(t)
+                        story.append(Spacer(1, 0.1*cm))
+            
+            nikto = adv.get('nikto', {})
+            if nikto and not nikto.get('error'):
+                vulns = nikto.get('vulnerabilities', [])
+                if vulns:
+                    for v in vulns:
+                        sev_color = RED if v.get('severity') == 'critical' else (ORANGE if v.get('severity') == 'high' else YELLOW)
+                        adv_data = [[
+                            Paragraph(f'<font color="{sev_color.hexval()}"><b>NIKTO FINDING</b></font>', ParagraphStyle('', fontName=UNICODE_FONT_BOLD, fontSize=8)),
+                            Paragraph(f"<b>{v.get('severity').upper()}</b>: {v.get('description')}", body_style)
+                        ]]
+                        t = Table(adv_data, colWidths=[3.5*cm, 13.5*cm])
+                        t.setStyle(TableStyle([
+                            ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#fafafa')),
+                            ('BOX', (0,0), (-1,-1), 0.5, sev_color),
+                            ('VALIGN', (0,0), (-1,-1), 'TOP'),
+                            ('PADDING', (0,0), (-1,-1), 8)
+                        ]))
+                        story.append(t)
+                        story.append(Spacer(1, 0.1*cm))
+                        
+            sql = adv.get('sqlmap', {})
+            if sql and not sql.get('error') and not sql.get('skipped'):
+                if sql.get('injectable'):
+                    adv_data = [[
+                        Paragraph(f'<font color="{RED.hexval()}"><b>SQL INJECTION</b></font>', ParagraphStyle('', fontName=UNICODE_FONT_BOLD, fontSize=8)),
+                        Paragraph(f"<b>DB: {sql.get('dbms')}</b><br/>Vulnerable params: {', '.join(sql.get('parameters', []))}", body_style)
+                    ]]
+                    t = Table(adv_data, colWidths=[3.5*cm, 13.5*cm])
+                    t.setStyle(TableStyle([
+                        ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#fff7f7')),
+                        ('BOX', (0,0), (-1,-1), 0.5, RED),
+                        ('VALIGN', (0,0), (-1,-1), 'TOP'),
+                        ('PADDING', (0,0), (-1,-1), 8)
+                    ]))
+                    story.append(t)
+                    story.append(Spacer(1, 0.1*cm))
+                    
+            crt = adv.get('crt_sh', {})
+            if crt and not crt.get('error') and crt.get('count', 0) > 0:
+                subs = crt.get('subdomains', [])
+                if len(subs) > 8:
+                    subs = subs[:8] + [f"... and {len(subs)-8} more"]
+                adv_data = [[
+                    Paragraph(f'<font color="{GREEN.hexval()}"><b>OSINT Subdomains</b></font>', ParagraphStyle('', fontName=UNICODE_FONT_BOLD, fontSize=8)),
+                    Paragraph(", ".join(subs), body_style)
+                ]]
+                t = Table(adv_data, colWidths=[3.5*cm, 13.5*cm])
+                t.setStyle(TableStyle([
+                    ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#f0fff4')),
+                    ('BOX', (0,0), (-1,-1), 0.5, GREEN),
+                    ('VALIGN', (0,0), (-1,-1), 'TOP'),
+                    ('PADDING', (0,0), (-1,-1), 8)
+                ]))
+                story.append(t)
+                story.append(Spacer(1, 0.1*cm))
 
         # ── Footer ─────────────────────────────────────────────────────────
         # ✅ FIX: CyberShield → PRAWL

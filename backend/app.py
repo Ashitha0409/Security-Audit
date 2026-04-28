@@ -20,6 +20,7 @@ from advanced_scanner import (
     run_nmap_scan,
     run_nikto_scan,
     run_sqlmap_scan,
+    run_subdomain_scan,
     check_docker_available,
 )
 
@@ -117,8 +118,8 @@ def scan():
         url = 'https://' + url
 
     hostname = urlparse(url).hostname or ''
-    if '.' not in hostname:
-        return jsonify({'error': 'Please enter a valid website URL (e.g. https://yoursite.com)'}), 400
+    if not hostname:
+        return jsonify({'error': 'Please enter a valid website URL.'}), 400
 
     logger.info(f"Scan requested for: {hostname} (lang={language})")
 
@@ -212,12 +213,9 @@ def advanced_scan():
     if not url:
         return jsonify({"error": "URL is required"}), 400
 
-    # Basic sanity check — don't let localhost / RFC-1918 addresses be scanned
-    blocked_prefixes = ("localhost", "127.", "192.168.", "10.", "172.16.", "0.0.0.0")
+    # No localhost blocking so you can test locally
     from advanced_scanner import _extract_hostname
     hostname = _extract_hostname(url)
-    if any(hostname.startswith(p) for p in blocked_prefixes):
-        return jsonify({"error": "Scanning private/local addresses is not allowed."}), 400
 
     results = run_full_advanced_scan(url, consent=consent)
     return jsonify(results)
@@ -263,6 +261,17 @@ def scan_sqlmap_only():
         return jsonify({"error": "Explicit consent required to run SQLMap."}), 403
 
     return jsonify(run_sqlmap_scan(url))
+
+
+@app.route("/api/scan/subdomains", methods=["POST"])
+@limiter.limit("5 per minute")
+def scan_subdomains_only():
+    """Run OSINT Subdomain Enumeration."""
+    data = request.get_json(silent=True) or {}
+    url  = (data.get("url") or "").strip()
+    if not url:
+        return jsonify({"error": "URL is required"}), 400
+    return jsonify(run_subdomain_scan(url))
 
 
 if __name__ == '__main__':

@@ -53,6 +53,39 @@ DETAILED FINDINGS:"""
         if f.get('fix'):
             ctx += f"\n   Fix: {f.get('fix','')}"
 
+    adv = scan_context.get('advanced_scan')
+    if adv:
+        ctx += "\n\nADVANCED SCAN FINDINGS:"
+        
+        nmap = adv.get('nmap', {})
+        if nmap and not nmap.get('error'):
+            risks = nmap.get('risk_findings', [])
+            if risks:
+                ctx += f"\n- NMAP: Found {len(risks)} dangerous open ports."
+                for r in risks[:3]:
+                    ctx += f"\n  * Port {r.get('port')} ({r.get('service')}): {r.get('description')}"
+            else:
+                ctx += "\n- NMAP: No dangerous open ports found."
+                
+        nikto = adv.get('nikto', {})
+        if nikto and not nikto.get('error'):
+            vulns = nikto.get('vulnerabilities', [])
+            if vulns:
+                ctx += f"\n- NIKTO: Found {len(vulns)} web vulnerabilities."
+                for v in vulns[:3]:
+                    ctx += f"\n  * [{v.get('severity').upper()}] {v.get('description')}"
+            else:
+                ctx += "\n- NIKTO: No web vulnerabilities found."
+                
+        sql = adv.get('sqlmap', {})
+        if sql and not sql.get('error') and not sql.get('skipped'):
+            if sql.get('injectable'):
+                ctx += f"\n- SQLMAP: 🚨 CRITICAL SQL INJECTION FOUND!"
+                ctx += f"\n  * DB: {sql.get('dbms')}"
+                ctx += f"\n  * Params: {', '.join(sql.get('parameters', []))}"
+            else:
+                ctx += "\n- SQLMAP: No SQL injection detected."
+
     return ctx
 
 

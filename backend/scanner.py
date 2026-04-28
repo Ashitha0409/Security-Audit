@@ -70,10 +70,11 @@ def check_headers(url):
     try:
         parsed    = urlparse(url)
         hostname  = parsed.hostname or parsed.path.split('/')[0]
-        https_url = f'https://{hostname}'
+        scheme    = parsed.scheme if parsed.scheme in ('http', 'https') else 'https'
+        target_url = f'{scheme}://{hostname}'
 
         r = requests.get(
-            https_url, timeout=8, allow_redirects=True,
+            target_url, timeout=8, allow_redirects=True,
             headers={'User-Agent': 'Mozilla/5.0 (compatible; PRAWL/1.0)'}
         )
         headers = {k.lower(): v for k, v in r.headers.items()}
@@ -178,41 +179,14 @@ def check_open_ports(hostname):
     return results
 
 
-def check_breach(domain):
-    try:
-        r = requests.get(
-            f'https://haveibeenpwned.com/api/v3/breacheddomain/{domain}',
-            headers={'User-Agent': 'PRAWL-Security-Scanner'},
-            timeout=5
-        )
-        if r.status_code == 200:
-            breaches = r.json()
-            count    = len(breaches)
-            return {
-                'check': 'Data Breach History', 'status': 'fail',
-                'severity': 'critical' if count > 2 else 'high',
-                'details': f'Domain found in {count} known data breach(es): {", ".join(breaches[:3])}',
-                'fix': 'Notify customers. Reset all passwords. Enable 2FA. Report to CERT-In within 6 hours (Indian law).'
-            }
-        elif r.status_code == 404:
-            return {'check': 'Data Breach History', 'status': 'pass', 'severity': 'none',
-                    'details': 'Domain not found in any known breach databases.', 'fix': ''}
-    except Exception as e:
-        # ✅ FIX: log instead of silent pass
-        logger.warning(f"Breach check failed for {domain}: {e}")
-
-    return {'check': 'Data Breach History', 'status': 'info', 'severity': 'info',
-            'details': 'Could not query breach database (API key required for full access).',
-            'fix': 'Sign up for HaveIBeenPwned notifications at haveibeenpwned.com'}
-
-
 def check_software_versions(url):
     results = []
     try:
         parsed   = urlparse(url)
         hostname = parsed.hostname or parsed.path.split('/')[0]
+        scheme   = parsed.scheme if parsed.scheme in ('http', 'https') else 'https'
         r = requests.get(
-            f'https://{hostname}', timeout=8,
+            f'{scheme}://{hostname}', timeout=8,
             headers={'User-Agent': 'Mozilla/5.0 (compatible; PRAWL/1.0)'}
         )
         disclosed = []
@@ -343,7 +317,6 @@ def run_full_scan(url, language='english'):
     findings.append(check_ssl(hostname))
     findings.extend(check_headers(url))
     findings.extend(check_open_ports(hostname))
-    findings.append(check_breach(hostname))
     findings.extend(check_software_versions(url))
 
     score                  = calculate_score(findings)
