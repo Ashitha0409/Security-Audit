@@ -30,6 +30,8 @@ def generate_pdf_report(scan_result, output_dir=None):
             ('C:/Windows/Fonts/arial.ttf',        'C:/Windows/Fonts/arialbd.ttf'),
             ('C:/Windows/Fonts/NotoSans-Regular.ttf', 'C:/Windows/Fonts/NotoSans-Bold.ttf'),
             # Linux
+            ('/usr/share/fonts/truetype/freefont/FreeSans.ttf',
+             '/usr/share/fonts/truetype/freefont/FreeSansBold.ttf'),
             ('/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf',
              '/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf'),
             # macOS
@@ -124,8 +126,11 @@ def generate_pdf_report(scan_result, output_dir=None):
         score       = scan_result['score']
         score_color = RED if score < 40 else (ORANGE if score < 60 else (YELLOW if score < 80 else GREEN))
 
-        # ✅ FIX: AI summary now uses Unicode font so Hindi/regional text renders correctly
+        # ✅ FIX: Escape AI summary text and replace newlines to prevent overlapping/XML errors
+        import re
         ai_summary_text = scan_result.get('ai_summary', '')
+        ai_summary_text = re.sub(r'[^\u0000-\uFFFF]', '', ai_summary_text)  # Remove emojis that cause '?' symbols
+        ai_summary_text = ai_summary_text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('\n', '<br/>')
 
         score_data = [[
             Paragraph(
@@ -167,11 +172,13 @@ def generate_pdf_report(scan_result, output_dir=None):
         ]]
         stat_table = Table(stat_data, colWidths=[4.25*cm] * 4)
         stat_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, -1), LIGHTGREY),
-            ('PADDING',    (0, 0), (-1, -1), 10),
-            ('ALIGN',      (0, 0), (-1, -1), 'CENTER'),
-            ('BOX',        (0, 0), (-1, -1), 1, colors.HexColor('#e5e7eb')),
-            ('LINEBEFORE', (1, 0), (-1, -1), 1, colors.HexColor('#e5e7eb')),
+            ('BACKGROUND',    (0, 0), (-1, -1), LIGHTGREY),
+            ('TOPPADDING',    (0, 0), (-1, -1), 12),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 16),
+            ('ALIGN',         (0, 0), (-1, -1), 'CENTER'),
+            ('VALIGN',        (0, 0), (-1, -1), 'MIDDLE'),
+            ('BOX',           (0, 0), (-1, -1), 1, colors.HexColor('#e5e7eb')),
+            ('LINEBEFORE',    (1, 0), (-1, -1), 1, colors.HexColor('#e5e7eb')),
         ]))
         story.append(stat_table)
         story.append(Spacer(1, 0.5*cm))
@@ -207,7 +214,7 @@ def generate_pdf_report(scan_result, output_dir=None):
                     ParagraphStyle('', fontName=UNICODE_FONT_BOLD, fontSize=9)
                 ),
                 Paragraph(
-                    f['details'],
+                    str(f.get('details', '')).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('\n', '<br/>'),
                     ParagraphStyle('', fontName=UNICODE_FONT, fontSize=8,
                                    textColor=colors.HexColor('#4b5563'), leading=12)
                 ),
@@ -233,7 +240,7 @@ def generate_pdf_report(scan_result, output_dir=None):
                         ParagraphStyle('', fontName=UNICODE_FONT_BOLD, fontSize=7, textColor=BLUE)
                     ),
                     Paragraph(
-                        f['fix'],
+                        str(f.get('fix', '')).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('\n', '<br/>'),
                         ParagraphStyle('', fontName=UNICODE_FONT, fontSize=8,
                                        textColor=GREY, leading=12)
                     ),
@@ -261,7 +268,7 @@ def generate_pdf_report(scan_result, output_dir=None):
                     for r in risks:
                         adv_data = [[
                             Paragraph(f'<font color="{RED.hexval()}"><b>NMAP: DANGEROUS PORT</b></font>', ParagraphStyle('', fontName=UNICODE_FONT_BOLD, fontSize=8)),
-                            Paragraph(f"<b>Port {r.get('port')} ({r.get('service')})</b><br/>{r.get('description')}", body_style)
+                            Paragraph(f"<b>Port {r.get('port')} ({r.get('service')})</b><br/>{str(r.get('description', '')).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace(chr(10), '<br/>')}", body_style)
                         ]]
                         t = Table(adv_data, colWidths=[3.5*cm, 13.5*cm])
                         t.setStyle(TableStyle([
@@ -281,7 +288,7 @@ def generate_pdf_report(scan_result, output_dir=None):
                         sev_color = RED if v.get('severity') == 'critical' else (ORANGE if v.get('severity') == 'high' else YELLOW)
                         adv_data = [[
                             Paragraph(f'<font color="{sev_color.hexval()}"><b>NIKTO FINDING</b></font>', ParagraphStyle('', fontName=UNICODE_FONT_BOLD, fontSize=8)),
-                            Paragraph(f"<b>{v.get('severity').upper()}</b>: {v.get('description')}", body_style)
+                            Paragraph(f"<b>{v.get('severity').upper()}</b>: {str(v.get('description', '')).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace(chr(10), '<br/>')}", body_style)
                         ]]
                         t = Table(adv_data, colWidths=[3.5*cm, 13.5*cm])
                         t.setStyle(TableStyle([
