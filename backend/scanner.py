@@ -70,10 +70,11 @@ def check_headers(url):
     try:
         parsed    = urlparse(url)
         hostname  = parsed.hostname or parsed.path.split('/')[0]
-        https_url = f'https://{hostname}'
+        scheme    = parsed.scheme if parsed.scheme in ('http', 'https') else 'https'
+        target_url = f'{scheme}://{hostname}'
 
         r = requests.get(
-            https_url, timeout=8, allow_redirects=True,
+            target_url, timeout=8, allow_redirects=True,
             headers={'User-Agent': 'Mozilla/5.0 (compatible; PRAWL/1.0)'}
         )
         headers = {k.lower(): v for k, v in r.headers.items()}
@@ -109,8 +110,9 @@ def check_headers(url):
 
     except Exception as e:
         logger.warning(f"Header check failed for {url}: {e}")
+        err_msg = "Connection failed or refused. Target may be unreachable." if "Max retries exceeded" in str(e) else str(e)
         results.append({'check': 'Security Headers', 'status': 'error', 'severity': 'high',
-                        'details': str(e), 'fix': 'Check that your website is reachable.'})
+                        'details': err_msg, 'fix': 'Check that your website is reachable on this port.'})
     return results
 
 
@@ -178,41 +180,14 @@ def check_open_ports(hostname):
     return results
 
 
-def check_breach(domain):
-    try:
-        r = requests.get(
-            f'https://haveibeenpwned.com/api/v3/breacheddomain/{domain}',
-            headers={'User-Agent': 'PRAWL-Security-Scanner'},
-            timeout=5
-        )
-        if r.status_code == 200:
-            breaches = r.json()
-            count    = len(breaches)
-            return {
-                'check': 'Data Breach History', 'status': 'fail',
-                'severity': 'critical' if count > 2 else 'high',
-                'details': f'Domain found in {count} known data breach(es): {", ".join(breaches[:3])}',
-                'fix': 'Notify customers. Reset all passwords. Enable 2FA. Report to CERT-In within 6 hours (Indian law).'
-            }
-        elif r.status_code == 404:
-            return {'check': 'Data Breach History', 'status': 'pass', 'severity': 'none',
-                    'details': 'Domain not found in any known breach databases.', 'fix': ''}
-    except Exception as e:
-        # ✅ FIX: log instead of silent pass
-        logger.warning(f"Breach check failed for {domain}: {e}")
-
-    return {'check': 'Data Breach History', 'status': 'info', 'severity': 'info',
-            'details': 'Could not query breach database (API key required for full access).',
-            'fix': 'Sign up for HaveIBeenPwned notifications at haveibeenpwned.com'}
-
-
 def check_software_versions(url):
     results = []
     try:
         parsed   = urlparse(url)
         hostname = parsed.hostname or parsed.path.split('/')[0]
+        scheme   = parsed.scheme if parsed.scheme in ('http', 'https') else 'https'
         r = requests.get(
-            f'https://{hostname}', timeout=8,
+            f'{scheme}://{hostname}', timeout=8,
             headers={'User-Agent': 'Mozilla/5.0 (compatible; PRAWL/1.0)'}
         )
         disclosed = []
@@ -233,10 +208,99 @@ def check_software_versions(url):
     except Exception as e:
         # ✅ FIX: log instead of silent pass
         logger.warning(f"Version check failed for {url}: {e}")
+        err_msg = "Connection failed or refused." if "Max retries exceeded" in str(e) else str(e)
         results.append({'check': 'Software Version Check', 'status': 'error',
-                        'severity': 'info', 'details': str(e), 'fix': ''})
+                        'severity': 'info', 'details': err_msg, 'fix': ''})
     return results
 
+
+def check_cookies_secure(url):
+    try:
+        response = requests.get(url, timeout=10, allow_redirects=False)
+        cookies_header = response.headers.get('set-cookie', '').lower()
+        if not cookies_header:
+            return [{'check': 'Cookie Security', 'status': 'pass', 'severity': 'none', 
+                     'details': 'No session cookies are exposed directly on initialization.', 'fix': 'N/A'}]
+        
+        missing_secure = 'secure' not in cookies_header
+        missing_httponly = 'httponly' not in cookies_header
+        
+        if missing_secure and url.startswith('https://'):
+            return [{'check': 'Cookie Security', 'status': 'warning', 'severity': 'medium',
+                     'details': 'Cookies are missing the Secure flag, making them vulnerable to interception over unencrypted connections.',
+                     'fix': 'Set the Secure flag on all session cookies.'}]
+        if missing_httponly:
+            return [{'check': 'Cookie Security', 'status': 'warning', 'severity': 'medium',
+                     'details': 'Cookies are missing the HttpOnly flag, increasing risk of Cross-Site Scripting (XSS) token theft.',
+                     'fix': 'Set the HttpOnly flag on all sensitive cookies.'}]
+            
+        return [{'check': 'Cookie Security', 'status': 'pass', 'severity': 'none',
+                 'details': 'Cookies are configured securely.', 'fix': ''}]
+    except Exception as e:
+        return [{'check': 'Cookie Security', 'status': 'error', 'severity': 'info', 'details': f'Failed to check cookies: {str(e)}', 'fix': ''}]
+
+def check_cors(url):
+    try:
+        headers = {'Origin': 'https://evil.com'}
+        response = requests.get(url, headers=headers, timeout=10)
+        acao = response.headers.get('Access-Control-Allow-Origin', '')
+        if acao == '*' or acao == 'https://evil.com':
+            return [{'check': 'CORS Configuration', 'status': 'warning', 'severity': 'medium',
+                     'details': f"Overly permissive CORS policy detected (Access-Control-Allow-Origin: {acao}).",
+                     'fix': "Restrict CORS headers to trusted domains only instead of a wildcard."}]
+        return [{'check': 'CORS Configuration', 'status': 'pass', 'severity': 'none',
+                 'details': 'CORS policy appears restrictive.', 'fix': ''}]
+    except Exception as e:
+        return [{'check': 'CORS Configuration', 'status': 'error', 'severity': 'info', 'details': f'Failed to check CORS: {str(e)}', 'fix': ''}]
+
+def check_security_headers(url):
+    try:
+        response = requests.get(url, timeout=10, allow_redirects=False)
+        headers = {k.lower(): v.lower() for k, v in response.headers.items()}
+        results = []
+        
+        if 'x-frame-options' not in headers and 'content-security-policy' not in headers:
+            results.append({'check': 'Clickjacking Protection', 'status': 'warning', 'severity': 'medium', 'details': 'Missing X-Frame-Options or CSP frame-ancestors. Site may be vulnerable to Clickjacking.', 'fix': 'Add X-Frame-Options: DENY or SAMEORIGIN.'})
+        else:
+            results.append({'check': 'Clickjacking Protection', 'status': 'pass', 'severity': 'none', 'details': 'Anti-clickjacking headers are present.', 'fix': ''})
+            
+        if 'x-content-type-options' not in headers:
+            results.append({'check': 'MIME Sniffing', 'status': 'warning', 'severity': 'low', 'details': 'Missing X-Content-Type-Options header.', 'fix': 'Add X-Content-Type-Options: nosniff.'})
+        else:
+            results.append({'check': 'MIME Sniffing', 'status': 'pass', 'severity': 'none', 'details': 'MIME-sniffing protection enabled.', 'fix': ''})
+            
+        if url.startswith('https://'):
+            if 'strict-transport-security' not in headers:
+                results.append({'check': 'HSTS Check', 'status': 'warning', 'severity': 'medium', 'details': 'HTTP Strict-Transport-Security (HSTS) is not enabled.', 'fix': 'Add Strict-Transport-Security header to enforce secure connections.'})
+            else:
+                results.append({'check': 'HSTS Check', 'status': 'pass', 'severity': 'none', 'details': 'HSTS is enabled.', 'fix': ''})
+        
+        return results
+    except Exception as e:
+        return [{'check': 'Advanced Security Headers', 'status': 'error', 'severity': 'info', 'details': f'Failed to verify headers: {str(e)}', 'fix': ''}]
+
+def check_exposed_files(url):
+    base_url = url.rstrip('/')
+    results = []
+    
+    try:
+        env_resp = requests.get(base_url + '/.env', timeout=5, allow_redirects=False)
+        if env_resp.status_code == 200 and 'DB_' in env_resp.text:
+            results.append({'check': 'Exposed Secrets (.env)', 'status': 'fail', 'severity': 'critical', 'details': '.env configuration file is publicly exposed!', 'fix': 'Deny access to dotfiles located in the root web directory.'})
+    except:
+        pass
+        
+    try:
+        git_resp = requests.get(base_url + '/.git/config', timeout=5, allow_redirects=False)
+        if git_resp.status_code == 200 and '[core]' in git_resp.text:
+            results.append({'check': 'Exposed Codebase (.git)', 'status': 'fail', 'severity': 'critical', 'details': 'Git configuration folder is publicly exposed!', 'fix': 'Deny access to the .git directory immediately.'})
+    except:
+        pass
+
+    if not results:
+        results.append({'check': 'Sensitive Files Exposure', 'status': 'pass', 'severity': 'none', 'details': 'No common sensitive configuration files (.env, .git) exposed.', 'fix': ''})
+        
+    return results
 
 def calculate_score(findings):
     score        = 100
@@ -343,8 +407,11 @@ def run_full_scan(url, language='english'):
     findings.append(check_ssl(hostname))
     findings.extend(check_headers(url))
     findings.extend(check_open_ports(hostname))
-    findings.append(check_breach(hostname))
     findings.extend(check_software_versions(url))
+    findings.extend(check_cookies_secure(url))
+    findings.extend(check_cors(url))
+    findings.extend(check_security_headers(url))
+    findings.extend(check_exposed_files(url))
 
     score                  = calculate_score(findings)
     risk_level, risk_color = get_risk_level(score, findings)

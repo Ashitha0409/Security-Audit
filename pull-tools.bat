@@ -30,7 +30,7 @@ if %errorlevel% neq 0 ( echo  WARNING: Nikto pull failed. ) else ( echo  ✓ Nik
 
 echo.
 echo  [3/3] Pulling SQLMap ...
-docker pull paoloo/sqlmap
+docker pull secsi/sqlmap
 if %errorlevel% neq 0 ( echo  WARNING: SQLMap pull failed. ) else ( echo  ✓ SQLMap ready. )
 
 echo.

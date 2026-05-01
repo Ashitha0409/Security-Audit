@@ -20,6 +20,7 @@ from advanced_scanner import (
     run_nmap_scan,
     run_nikto_scan,
     run_sqlmap_scan,
+    run_subdomain_scan,
     check_docker_available,
 )
 
@@ -114,11 +115,14 @@ def scan():
     url = url.split()[0]
 
     if not url.startswith('http://') and not url.startswith('https://'):
-        url = 'https://' + url
+        if url.startswith('localhost') or re.match(r'^(127\.|192\.168\.|10\.)', url):
+            url = 'http://' + url
+        else:
+            url = 'https://' + url
 
     hostname = urlparse(url).hostname or ''
-    if '.' not in hostname:
-        return jsonify({'error': 'Please enter a valid website URL (e.g. https://yoursite.com)'}), 400
+    if not hostname:
+        return jsonify({'error': 'Please enter a valid website URL.'}), 400
 
     logger.info(f"Scan requested for: {hostname} (lang={language})")
 
@@ -129,6 +133,28 @@ def scan():
         return jsonify(result)
     except Exception as e:
         logger.error(f"Scan failed for {hostname}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/network-scan', methods=['POST'])
+@limiter.limit("2 per minute")
+def network_scan():
+    """Execute a subnet sweep on a CIDR block or multiple IPs"""
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'Invalid JSON'}), 400
+
+    cidr = data.get('cidr', '').strip()
+    if not cidr:
+        return jsonify({'error': 'No CIDR or IP range provided'}), 400
+    
+    logger.info(f"Network sweep requested for: {cidr}")
+    from network_scanner import run_network_sweep
+    try:
+        results = run_network_sweep(cidr)
+        return jsonify(results)
+    except Exception as e:
+        logger.error(f"Network scan failed for {cidr}: {e}")
         return jsonify({'error': str(e)}), 500
 
 
@@ -212,12 +238,9 @@ def advanced_scan():
     if not url:
         return jsonify({"error": "URL is required"}), 400
 
-    # Basic sanity check — don't let localhost / RFC-1918 addresses be scanned
-    blocked_prefixes = ("localhost", "127.", "192.168.", "10.", "172.16.", "0.0.0.0")
+    # No localhost blocking so you can test locally
     from advanced_scanner import _extract_hostname
     hostname = _extract_hostname(url)
-    if any(hostname.startswith(p) for p in blocked_prefixes):
-        return jsonify({"error": "Scanning private/local addresses is not allowed."}), 400
 
     results = run_full_advanced_scan(url, consent=consent)
     return jsonify(results)
@@ -263,6 +286,17 @@ def scan_sqlmap_only():
         return jsonify({"error": "Explicit consent required to run SQLMap."}), 403
 
     return jsonify(run_sqlmap_scan(url))
+
+
+@app.route("/api/scan/subdomains", methods=["POST"])
+@limiter.limit("5 per minute")
+def scan_subdomains_only():
+    """Run OSINT Subdomain Enumeration."""
+    data = request.get_json(silent=True) or {}
+    url  = (data.get("url") or "").strip()
+    if not url:
+        return jsonify({"error": "URL is required"}), 400
+    return jsonify(run_subdomain_scan(url))
 
 
 if __name__ == '__main__':
