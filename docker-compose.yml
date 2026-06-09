@@ -5,6 +5,7 @@ name: prawl
 #
 #  Services
 #  ├── prawl        Flask app (port 5000)
+#  ├── neo4j        Graph store for the Threat Map (browser on 7474)
 #  └── pull-tools   One-shot: pre-pulls Nmap / Nikto / SQLMap images
 #                   so the first scan doesn't wait for a download
 #
@@ -32,6 +33,10 @@ services:
     environment:
       - PORT=5000
       - FLASK_ENV=production
+      # Threat Map graph store (in-memory fallback if neo4j is down)
+      - NEO4J_URI=bolt://neo4j:7687
+      - NEO4J_USER=neo4j
+      - NEO4J_PASSWORD=prawl-threat-map
     volumes:
       # Mount Docker socket so PRAWL can launch scanner containers
       - /var/run/docker.sock:/var/run/docker.sock
@@ -40,6 +45,8 @@ services:
     depends_on:
       pull-tools:
         condition: service_completed_successfully
+      neo4j:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c",
              "import urllib.request; urllib.request.urlopen('http://localhost:5000/')"]
@@ -47,6 +54,26 @@ services:
       timeout: 10s
       retries: 3
       start_period: 20s
+
+  # ── Neo4j graph store (Threat Map / attack-path analysis) ────
+  neo4j:
+    image: neo4j:5-community
+    container_name: prawl-neo4j
+    restart: unless-stopped
+    ports:
+      - "7474:7474"   # Neo4j Browser (explore the threat graph visually)
+      - "7687:7687"   # Bolt driver
+    environment:
+      - NEO4J_AUTH=neo4j/prawl-threat-map
+      - NEO4J_PLUGINS=[]
+    volumes:
+      - neo4j-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:7474 || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
 
   # ── Pre-pull scanner images (runs once, then exits) ─────────
   pull-tools:
@@ -67,3 +94,5 @@ services:
 volumes:
   reports:
     name: prawl-reports
+  neo4j-data:
+    name: prawl-neo4j-data

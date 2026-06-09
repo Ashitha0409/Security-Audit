@@ -5,7 +5,6 @@ from flask import Flask, request, jsonify, render_template, send_from_directory
 from flask_cors import CORS
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
-from urllib.parse import urlparse
 import os, sys, re, logging, sqlite3, json
 from datetime import datetime, timezone
 
@@ -14,6 +13,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))  # Add parent dir
 from scanner import run_full_scan
 from report_generator import generate_pdf_report
 from chatbot import get_chat_response
+from validation import (
+    normalize_web_target,
+    safe_url,
+    TargetValidationError,
+)
 
 from advanced_scanner import (
     run_full_advanced_scan,
@@ -106,23 +110,12 @@ def scan():
     if not data:
         return jsonify({'error': 'Invalid JSON body'}), 400
 
-    url = data.get('url', '').strip().rstrip('/')
     language = data.get('language', 'english').strip().lower()
 
-    if not url:
-        return jsonify({'error': 'No URL provided'}), 400
-
-    url = url.split()[0]
-
-    if not url.startswith('http://') and not url.startswith('https://'):
-        if url.startswith('localhost') or re.match(r'^(127\.|192\.168\.|10\.)', url):
-            url = 'http://' + url
-        else:
-            url = 'https://' + url
-
-    hostname = urlparse(url).hostname or ''
-    if not hostname:
-        return jsonify({'error': 'Please enter a valid website URL.'}), 400
+    try:
+        url, hostname = normalize_web_target(data.get('url', ''))
+    except TargetValidationError as e:
+        return jsonify({'error': str(e)}), 400
 
     logger.info(f"Scan requested for: {hostname} (lang={language})")
 
@@ -147,14 +140,41 @@ def network_scan():
     cidr = data.get('cidr', '').strip()
     if not cidr:
         return jsonify({'error': 'No CIDR or IP range provided'}), 400
-    
+
     logger.info(f"Network sweep requested for: {cidr}")
     from network_scanner import run_network_sweep
     try:
         results = run_network_sweep(cidr)
         return jsonify(results)
+    except TargetValidationError as e:
+        return jsonify({'error': str(e)}), 400
     except Exception as e:
         logger.error(f"Network scan failed for {cidr}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/threat-map', methods=['POST'])
+@limiter.limit("10 per minute")
+def threat_map():
+    """
+    Build a graph-based threat map (Neo4j-backed, in-memory fallback) from the
+    current scan and/or a network sweep, with ranked attack paths.
+    Body: { "scan_context": {...}, "network_sweep": {...} }
+    """
+    data = request.get_json(silent=True) or {}
+    scan = data.get('scan_context') or None
+    sweep = data.get('network_sweep') or None
+    if not scan and not sweep:
+        return jsonify({'error': 'No scan or network data to map. Run a scan or sweep first.'}), 400
+
+    from graph_mapper import build_threat_map
+    try:
+        result = build_threat_map(scan=scan, sweep=sweep)
+        logger.info(f"Threat map built ({result['backend']}): "
+                    f"{result['stats']['nodes']} nodes, {result['stats']['attack_paths']} paths")
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"Threat map failed: {e}")
         return jsonify({'error': str(e)}), 500
 
 
@@ -180,7 +200,14 @@ def chat():
 
     try:
         reply = get_chat_response(user_message, scan_context, chat_history)
-        return jsonify({'reply': reply})
+        # RAG citations: which scan findings grounded this answer.
+        sources = []
+        try:
+            from rag import get_sources
+            sources = get_sources(user_message, scan_context)
+        except Exception as e:
+            logger.debug(f"Source retrieval skipped: {e}")
+        return jsonify({'reply': reply, 'sources': sources})
     except Exception as e:
         logger.error(f"Chat error: {e}")
         return jsonify({'error': str(e)}), 500
@@ -238,9 +265,12 @@ def advanced_scan():
     if not url:
         return jsonify({"error": "URL is required"}), 400
 
-    # No localhost blocking so you can test locally
-    from advanced_scanner import _extract_hostname
-    hostname = _extract_hostname(url)
+    # localhost / private ranges stay allowed for on-prem testing; we only
+    # reject argument-injection style input (e.g. tokens starting with "-").
+    try:
+        url = safe_url(url)
+    except TargetValidationError as e:
+        return jsonify({"error": str(e)}), 400
 
     results = run_full_advanced_scan(url, consent=consent)
     return jsonify(results)

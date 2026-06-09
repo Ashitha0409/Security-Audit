@@ -2,9 +2,15 @@ Flask==3.0.3
 Flask-Cors==6.0.2
 Flask-Limiter==3.5.1
 requests==2.32.5
-groq==0.11.0
+groq==1.1.1
 reportlab==4.4.10
 python-dotenv==1.2.2
 gunicorn==25.1.0
 anthropic>=0.28.0
 openai>=1.0.0
+neo4j>=5.14.0
+
+# Optional: better semantic RAG retrieval over scan data.
+# The chatbot works without this (pure-Python TF-IDF fallback), but installing
+# it enables dense semantic search via the all-MiniLM-L6-v2 model.
+# sentence-transformers>=2.2.0
