@@ -1092,6 +1092,23 @@
       margin-bottom: 6px;
     }
 
+    /* Per-finding deep-link into the RAG-grounded chatbot */
+    .finding-ask-ai {
+      display: none;
+      margin: 0 18px 14px;
+      padding: 6px 12px;
+      font-size: 11px;
+      font-family: var(--mono);
+      border-radius: 20px;
+      border: 1px solid var(--blue);
+      background: var(--blue-dim);
+      color: var(--blue);
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .finding-ask-ai:hover { background: var(--blue); color: #fff; }
+    .finding-card.expanded .finding-ask-ai { display: inline-flex; }
+
     /* ERROR */
     .error-banner {
       background: rgba(239, 68, 68, 0.1);
@@ -1298,6 +1315,37 @@
       font-family: var(--mono);
       font-size: 12px;
     }
+
+    /* RAG citation chips — show which scan findings grounded each answer */
+    .chat-sources {
+      align-self: flex-start;
+      max-width: 90%;
+      margin: -2px 0 4px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      align-items: center;
+    }
+    .chat-sources-label {
+      font-size: 10px;
+      font-family: var(--mono);
+      color: var(--grey2);
+      letter-spacing: 0.3px;
+      width: 100%;
+      margin-bottom: 2px;
+    }
+    .chat-source-chip {
+      font-size: 10px;
+      font-family: var(--mono);
+      padding: 2px 8px;
+      border-radius: 20px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.02);
+      cursor: pointer;
+      transition: all 0.15s;
+      white-space: nowrap;
+    }
+    .chat-source-chip:hover { filter: brightness(1.3); }
 
     .chat-suggestions {
       padding: 0 16px 10px;
@@ -1647,7 +1695,36 @@
       background: var(--border);
       border-radius: 3px;
     }
+
+    /* ── Threat Map (Neo4j graph-based attack-path analysis) ── */
+    #threat-graph {
+      height: 480px;
+      background: radial-gradient(circle at 50% 30%, rgba(14,165,233,0.06), transparent 70%), var(--black);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      margin: 0 1.5rem 1rem;
+    }
+    .tm-backend-badge {
+      font-family: var(--mono); font-size: 11px; padding: 3px 10px;
+      border-radius: 20px; border: 1px solid var(--border); color: var(--grey2);
+    }
+    .tm-backend-badge.neo4j { color: #4ade80; border-color: #4ade80; }
+    .tm-legend { display:flex; flex-wrap:wrap; gap:10px; padding:0 1.5rem 12px; }
+    .tm-legend span { font-size:11px; font-family:var(--mono); color:var(--grey2); display:flex; align-items:center; gap:5px; }
+    .tm-legend i { width:10px; height:10px; border-radius:50%; display:inline-block; }
+    .attack-path {
+      margin: 0 1.5rem 10px; padding: 12px 14px; border-radius: 10px;
+      background: var(--dark2); border: 1px solid var(--border); border-left: 3px solid var(--red);
+    }
+    .attack-path .ap-rank { font-family:var(--mono); font-size:11px; color:var(--grey2); margin-bottom:6px; }
+    .attack-path .ap-chain { display:flex; flex-wrap:wrap; align-items:center; gap:6px; }
+    .attack-path .ap-node {
+      font-size:12px; font-family:var(--mono); padding:3px 9px; border-radius:6px;
+      border:1px solid var(--border); background:rgba(255,255,255,0.03);
+    }
+    .attack-path .ap-arrow { color:var(--grey2); font-size:13px; }
   </style>
+  <script src="https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
 </head>
 
 <body>
@@ -1930,6 +2007,46 @@
       </div>
 
     </div>
+
+    <!-- ── THREAT MAP — Neo4j graph-based attack-path analysis ── -->
+    <div id="threat-map-section" style="display:none;">
+      <div class="panel-header">
+        <span>🕸️</span>
+        <h3>Threat Map &amp; Attack Paths</h3>
+        <span class="tool-badge" style="background:rgba(74,222,128,0.15);color:#4ade80;border:1px solid rgba(74,222,128,0.3);">Neo4j</span>
+        <span class="tm-backend-badge" id="tm-backend" style="margin-left:auto;">not built</span>
+      </div>
+
+      <p style="padding:0 1.5rem 6px; color:var(--grey2); font-size:0.85rem; line-height:1.5;">
+        Maps relationships between hosts, exposed services, vulnerabilities and breaches into a
+        graph, then traces how an attacker could chain them — <strong>Internet → exposed service →
+        host → impact</strong>. Persisted to Neo4j when available (explore in the Neo4j Browser).
+      </p>
+
+      <button id="btn-threat-map">
+        <span id="tm-icon">🕸️</span>
+        <span id="tm-label">Build Threat Map</span>
+      </button>
+
+      <div id="threat-map-output" style="display:none;">
+        <div class="tm-legend">
+          <span><i style="background:#0ea5e9"></i>Host</span>
+          <span><i style="background:#f59e0b"></i>Service</span>
+          <span><i style="background:#ef4444"></i>Vulnerability</span>
+          <span><i style="background:#8b5cf6"></i>Technology</span>
+          <span><i style="background:#22c55e"></i>Subdomain</span>
+          <span><i style="background:#e11d48"></i>Breach</span>
+        </div>
+        <div id="threat-graph"></div>
+
+        <div class="panel-header" style="margin-top:6px;">
+          <span>🎯</span>
+          <h3 style="font-size:1rem;">Ranked Attack Paths</h3>
+          <span class="tool-badge" id="tm-path-count" style="background:rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.3);">0</span>
+        </div>
+        <div id="attack-paths"></div>
+      </div>
+    </div>
   </main>
 
   <footer>
@@ -1938,8 +2055,8 @@
       <span class="tech-tag">Python</span>
       <span class="tech-tag">Flask</span>
       <span class="tech-tag">Groq · Llama 3.3</span>
-      <span class="tech-tag">HaveIBeenPwned</span>
-      <span class="tech-tag">SSL Lib</span>
+      <span class="tech-tag">Neo4j</span>
+      <span class="tech-tag">XposedOrNot</span>
       <span class="tech-tag">ReportLab</span>
     </div>
   </footer>
@@ -1957,7 +2074,7 @@
       <div class="chat-header-dot"></div>
       <div>
         <div class="chat-header-title">PRAWL AI Assistant</div>
-        <div class="chat-header-sub">Ask anything about your scan</div>
+        <div class="chat-header-sub">Grounded in your scan · cites its sources</div>
       </div>
       <button class="chat-close" id="chatClose">✕</button>
     </div>
@@ -1984,6 +2101,7 @@
   <script>
 
     let currentScanData = null;
+    let lastNetworkSweep = null;
     let selectedLanguage = 'english';
     let historyChartInstance = null;
 
@@ -2245,8 +2363,10 @@
         if (data.error) throw new Error(data.error);
 
         // Build Topology UI
+        lastNetworkSweep = data;                       // feed the Threat Map
         document.getElementById('progress-section').style.display = 'none';
         document.getElementById('network-results-section').style.display = 'block';
+        document.getElementById('threat-map-section').style.display = 'block';
         document.getElementById('network-host-count').innerHTML = `<strong>${data.hosts_up}</strong> Live Hosts Detected`;
         
         const listDiv = document.getElementById('network-hosts-list');
@@ -2352,11 +2472,18 @@
         </div>
         <div class="finding-details">${f.details}</div>
         ${f.fix ? `<div class="finding-fix"><div class="finding-fix-label">// HOW TO FIX</div>${f.fix}</div>` : ''}
+        <button class="finding-ask-ai" type="button">🤖 Ask AI about this</button>
       `;
 
         // ✅ FIX: event listener on card instead of inline onclick
         card.querySelector('.finding-header').addEventListener('click', () => {
           card.classList.toggle('expanded');
+        });
+
+        // Deep-link this finding into the RAG-grounded chatbot
+        card.querySelector('.finding-ask-ai').addEventListener('click', (e) => {
+          e.stopPropagation();
+          window.askPrawlAI(`Explain this finding and how to fix it: ${f.check} — ${f.details}`);
         });
 
         list.appendChild(card);
@@ -2471,6 +2598,13 @@ Scan your website free at PRAWL`;
         if (chatOpen) chatInput.focus();
       }
 
+      // Global hook so finding cards (rendered elsewhere) can open the
+      // grounded chat with a focused question about a specific finding.
+      window.askPrawlAI = function (question) {
+        if (!chatOpen) toggleChat();
+        sendChatMessage(question);
+      };
+
       function scrollChat() {
         chatMessages.scrollTop = chatMessages.scrollHeight;
       }
@@ -2482,6 +2616,36 @@ Scan your website free at PRAWL`;
         chatMessages.appendChild(div);
         scrollChat();
         return div;
+      }
+
+      const SEV_COLOR = {
+        critical: 'var(--red)', high: '#f97316',
+        medium: 'var(--yellow)', low: '#3b82f6', none: 'var(--green)'
+      };
+
+      // RAG citations — render the scan findings that grounded the answer.
+      // Clicking a chip asks a focused follow-up about that finding.
+      function appendSources(sources) {
+        if (!sources || !sources.length) return;
+        const wrap = document.createElement('div');
+        wrap.className = 'chat-sources';
+        const label = document.createElement('span');
+        label.className = 'chat-sources-label';
+        label.textContent = '🔍 Grounded in your scan:';
+        wrap.appendChild(label);
+        sources.forEach(s => {
+          const color = SEV_COLOR[s.severity] || 'var(--grey2)';
+          const chip = document.createElement('span');
+          chip.className = 'chat-source-chip';
+          chip.style.borderColor = color;
+          chip.style.color = color;
+          chip.textContent = s.label;
+          chip.title = `relevance ${Math.round((s.relevance || 0) * 100)}% — click to ask about this`;
+          chip.addEventListener('click', () => sendChatMessage(`Tell me more about: ${s.label}`));
+          wrap.appendChild(chip);
+        });
+        chatMessages.appendChild(wrap);
+        scrollChat();
       }
 
       async function sendChatMessage(text) {
@@ -2512,6 +2676,7 @@ Scan your website free at PRAWL`;
 
           const reply = data.reply || 'Sorry, I could not get a response. Please try again.';
           appendMsg(reply, 'bot');
+          appendSources(data.sources);
           chatHistory.push({ role: 'assistant', content: reply });
 
           // Show badge if chat is closed
@@ -2548,6 +2713,7 @@ Scan your website free at PRAWL`;
         if (!chatOpen) chatBadge.classList.add('show');
         appendMsg(`✅ Scan complete! Your site scored ${currentScanData?.score}/100. Ask me anything — "What should I fix first?" is a great place to start.`, 'bot');
         showAdvancedScanSection();   // shows the Advanced Scan panel after a normal scan
+        document.getElementById('threat-map-section').style.display = 'block';
       });
     });
 
@@ -2799,9 +2965,114 @@ Scan your website free at PRAWL`;
       }
     }
 
-    // Wire up the advanced scan button
+    // ─────────────────────────────────────────
+    // THREAT MAP — Neo4j graph-based attack-path analysis
+    // ─────────────────────────────────────────
+    const TM_TYPE_COLOR = {
+      host: '#0ea5e9', service: '#f59e0b', vulnerability: '#ef4444',
+      technology: '#8b5cf6', subdomain: '#22c55e', breach: '#e11d48', entry: '#94a3b8'
+    };
+    const TM_SEV_COLOR = {
+      critical: '#ef4444', high: '#f97316', medium: '#f59e0b',
+      low: '#3b82f6', none: '#22c55e', info: '#94a3b8'
+    };
+    let threatNetwork = null;
+
+    function renderThreatGraph(nodes, edges) {
+      const visNodes = nodes.map(n => ({
+        id: n.id,
+        label: n.label,
+        shape: n.type === 'host' ? 'hexagon' : (n.type === 'vulnerability' || n.type === 'breach' ? 'diamond' : 'dot'),
+        size: n.type === 'host' ? 26 : (n.type === 'service' ? 18 : 14),
+        color: {
+          background: TM_TYPE_COLOR[n.type] || '#64748b',
+          border: TM_SEV_COLOR[n.severity] || '#334155',
+          highlight: { background: TM_TYPE_COLOR[n.type], border: '#fff' }
+        },
+        borderWidth: (n.severity === 'critical' || n.severity === 'high') ? 4 : 1,
+        font: { color: '#e5e7eb', size: 12, face: 'monospace' }
+      }));
+      const visEdges = edges.map(e => ({
+        from: e.source, to: e.target, label: e.rel,
+        arrows: 'to', color: { color: '#334155', highlight: '#0ea5e9' },
+        font: { color: '#64748b', size: 9, strokeWidth: 0, align: 'middle' },
+        smooth: { type: 'continuous' }
+      }));
+
+      const container = document.getElementById('threat-graph');
+      const data = { nodes: new vis.DataSet(visNodes), edges: new vis.DataSet(visEdges) };
+      const options = {
+        physics: { stabilization: true, barnesHut: { gravitationalConstant: -8000, springLength: 120 } },
+        interaction: { hover: true, tooltipDelay: 100 },
+        layout: { improvedLayout: true }
+      };
+      if (threatNetwork) threatNetwork.destroy();
+      threatNetwork = new vis.Network(container, data, options);
+    }
+
+    function renderAttackPaths(paths) {
+      const wrap = document.getElementById('attack-paths');
+      document.getElementById('tm-path-count').textContent = paths.length;
+      if (!paths.length) {
+        wrap.innerHTML = '<div style="padding:0 1.5rem 1rem;color:var(--green);font-size:0.88rem;">✅ No exploitable attack paths found in the mapped surface.</div>';
+        return;
+      }
+      wrap.innerHTML = paths.map((p, i) => {
+        const chain = p.steps.map((s, j) => {
+          const color = s.type === 'entry' ? '#94a3b8' : (TM_SEV_COLOR[s.severity] || '#64748b');
+          const node = `<span class="ap-node" style="color:${color};border-color:${color}55">${escHtml(s.label)}</span>`;
+          return j < p.steps.length - 1 ? node + '<span class="ap-arrow">➜</span>' : node;
+        }).join('');
+        const border = TM_SEV_COLOR[p.severity] || '#ef4444';
+        return `<div class="attack-path" style="border-left-color:${border}">
+          <div class="ap-rank">#${i + 1} · risk score ${p.score} · <span style="color:${border};text-transform:uppercase">${p.severity}</span></div>
+          <div class="ap-chain">${chain}</div>
+        </div>`;
+      }).join('');
+    }
+
+    function escHtml(s) {
+      return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    async function buildThreatMap() {
+      if (!currentScanData && !lastNetworkSweep) {
+        showToast('Run a scan or network sweep first.', '⚠️');
+        return;
+      }
+      const btn = document.getElementById('btn-threat-map');
+      const icon = document.getElementById('tm-icon');
+      const label = document.getElementById('tm-label');
+      btn.disabled = true; icon.textContent = '⏳'; label.textContent = 'Mapping attack surface…';
+
+      try {
+        const res = await fetch('/api/threat-map', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ scan_context: currentScanData || null, network_sweep: lastNetworkSweep || null })
+        });
+        const data = await res.json();
+        if (data.error) { showToast('Error: ' + data.error, '⚠️'); return; }
+
+        const badge = document.getElementById('tm-backend');
+        if (data.backend === 'neo4j') { badge.textContent = '● Neo4j (persisted)'; badge.classList.add('neo4j'); }
+        else { badge.textContent = '● In-memory'; badge.classList.remove('neo4j'); }
+
+        document.getElementById('threat-map-output').style.display = 'block';
+        renderThreatGraph(data.nodes, data.edges);
+        renderAttackPaths(data.attack_paths);
+        showToast(`Mapped ${data.stats.nodes} assets, ${data.stats.attack_paths} attack paths`, '🕸️');
+      } catch (err) {
+        showToast('Threat map failed: ' + err.message, '⚠️');
+      } finally {
+        btn.disabled = false; icon.textContent = '🕸️'; label.textContent = 'Build Threat Map';
+      }
+    }
+
+    // Wire up the advanced scan + threat map buttons
     document.addEventListener("DOMContentLoaded", () => {
       document.getElementById("btn-advanced-scan").addEventListener("click", runAdvancedScan);
+      document.getElementById("btn-threat-map").addEventListener("click", buildThreatMap);
     });
   </script>
 </body>

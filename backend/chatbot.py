@@ -5,6 +5,15 @@ Uses Groq (free) → Anthropic → OpenRouter → Smart Rule-based fallback.
 """
 import os, json
 
+# RAG retrieval over scan data — optional, falls back to a full context dump.
+try:
+    from rag import build_rag_context
+except Exception:  # pragma: no cover - import path / dependency safety
+    try:
+        from backend.rag import build_rag_context
+    except Exception:
+        build_rag_context = None
+
 
 SYSTEM_PROMPT = """You are PRAWL, a friendly AI cybersecurity assistant built specifically for Indian small business owners.
 
@@ -88,7 +97,12 @@ DETAILED FINDINGS:"""
 
 def build_messages(user_message, scan_context, chat_history):
     """Build the messages array for the API call"""
-    context_str = build_context_string(scan_context)
+    # Prefer RAG: retrieve only the scan details relevant to this question.
+    # Fall back to the full context dump if the RAG module is unavailable.
+    if build_rag_context is not None and scan_context:
+        context_str = build_rag_context(user_message, scan_context)
+    else:
+        context_str = build_context_string(scan_context)
 
     messages = []
 

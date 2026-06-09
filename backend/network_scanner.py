@@ -2,19 +2,25 @@ import subprocess
 import xml.etree.ElementTree as ET
 from typing import Dict, Any
 
+from validation import safe_cidr_targets
+
 def run_network_sweep(cidr: str) -> Dict[str, Any]:
     """
     Runs an Nmap Fast Scan (-F) across a CIDR block or comma-separated IPs.
     Outputs as XML, then parses it into a JSON topology structure.
+
+    Raises TargetValidationError on unsafe input (caught by the API layer).
     """
+    targets = safe_cidr_targets(cidr)
+
     cmd = [
         "docker", "run", "--rm",
         "--network=host",
         "instrumentisto/nmap",
-        "-n", "-F", "-T4", "--min-rate", "1000", "--max-retries", "1", "-oX", "-", 
-        cidr
+        "-n", "-F", "-T4", "--min-rate", "1000", "--max-retries", "1", "-oX", "-",
+        *targets,
     ]
-    
+
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
         if proc.returncode != 0 and '<nmaprun' not in proc.stdout:

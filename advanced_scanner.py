@@ -11,6 +11,8 @@ import xml.etree.ElementTree as ET
 import requests
 from typing import Dict, Any, Tuple
 
+from validation import safe_hostname, safe_url, TargetValidationError
+
 
 # ──────────────────────────────────────────────
 # HELPERS
@@ -114,7 +116,10 @@ def run_nmap_scan(target: str) -> Dict[str, Any]:
     Run Nmap inside Docker.  Uses the official instrumentisto/nmap image.
     Returns a structured dict with open ports, service versions, and risk findings.
     """
-    hostname = _extract_hostname(target)
+    try:
+        hostname = safe_hostname(target)
+    except TargetValidationError as e:
+        return _nmap_error(str(e))
 
     cmd = [
         "docker", "run", "--rm",
@@ -214,7 +219,10 @@ def run_nikto_scan(target: str) -> Dict[str, Any]:
     Run Nikto web vulnerability scanner inside Docker.
     Uses the frapsoft/nikto image.
     """
-    target = _ensure_protocol(target)
+    try:
+        target = safe_url(target)
+    except TargetValidationError as e:
+        return _nikto_error(str(e))
 
     cmd = [
         "docker", "run", "--rm",
@@ -319,7 +327,10 @@ def run_sqlmap_scan(target: str, test_forms: bool = True) -> Dict[str, Any]:
 
     test_forms=True  →  also crawl and test HTML forms (slower but thorough)
     """
-    target = _ensure_protocol(target)
+    try:
+        target = safe_url(target)
+    except TargetValidationError as e:
+        return _sqlmap_error(str(e))
 
     cmd = [
         "docker", "run", "--rm",
@@ -416,7 +427,10 @@ def run_whatweb_scan(target: str) -> Dict[str, Any]:
     Run WhatWeb inside Docker to fingerprint the technology stack.
     Uses the secsi/whatweb image.
     """
-    target = _ensure_protocol(target)
+    try:
+        target = safe_url(target)
+    except TargetValidationError as e:
+        return _whatweb_error(str(e))
 
     cmd = [
         "docker", "run", "--rm",
@@ -521,11 +535,15 @@ def run_subdomain_scan(target: str) -> Dict[str, Any]:
     Query crt.sh (Certificate Transparency logs) for subdomains of the target.
     This is extremely fast and completely stealthy (OSINT).
     """
-    hostname = _extract_hostname(target)
+    try:
+        hostname = safe_hostname(target)
+    except TargetValidationError as e:
+        return {"scan_tool": "crt_sh", "target": target, "base_domain": "",
+                "subdomains": [], "count": 0, "error": str(e)}
     # Strip any 'www.' to get the base domain for wider search
     if hostname.startswith('www.'):
         hostname = hostname[4:]
-        
+
     result = {
         "scan_tool": "crt_sh",
         "target": target,

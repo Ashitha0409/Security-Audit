@@ -45,7 +45,7 @@ def check_ssl(hostname):
         else:
             result.update({
                 'status': 'pass', 'severity': 'none',
-                'details': f'SSL certificate is valid. Expires in {days_left} days.' if days_left else 'SSL valid.',
+                'details': f'SSL certificate is valid. Expires in {days_left} days.' if days_left is not None else 'SSL valid.',
                 'fix': ''
             })
     except ssl.SSLError as e:
@@ -253,32 +253,6 @@ def check_cors(url):
     except Exception as e:
         return [{'check': 'CORS Configuration', 'status': 'error', 'severity': 'info', 'details': f'Failed to check CORS: {str(e)}', 'fix': ''}]
 
-def check_security_headers(url):
-    try:
-        response = requests.get(url, timeout=10, allow_redirects=False)
-        headers = {k.lower(): v.lower() for k, v in response.headers.items()}
-        results = []
-        
-        if 'x-frame-options' not in headers and 'content-security-policy' not in headers:
-            results.append({'check': 'Clickjacking Protection', 'status': 'warning', 'severity': 'medium', 'details': 'Missing X-Frame-Options or CSP frame-ancestors. Site may be vulnerable to Clickjacking.', 'fix': 'Add X-Frame-Options: DENY or SAMEORIGIN.'})
-        else:
-            results.append({'check': 'Clickjacking Protection', 'status': 'pass', 'severity': 'none', 'details': 'Anti-clickjacking headers are present.', 'fix': ''})
-            
-        if 'x-content-type-options' not in headers:
-            results.append({'check': 'MIME Sniffing', 'status': 'warning', 'severity': 'low', 'details': 'Missing X-Content-Type-Options header.', 'fix': 'Add X-Content-Type-Options: nosniff.'})
-        else:
-            results.append({'check': 'MIME Sniffing', 'status': 'pass', 'severity': 'none', 'details': 'MIME-sniffing protection enabled.', 'fix': ''})
-            
-        if url.startswith('https://'):
-            if 'strict-transport-security' not in headers:
-                results.append({'check': 'HSTS Check', 'status': 'warning', 'severity': 'medium', 'details': 'HTTP Strict-Transport-Security (HSTS) is not enabled.', 'fix': 'Add Strict-Transport-Security header to enforce secure connections.'})
-            else:
-                results.append({'check': 'HSTS Check', 'status': 'pass', 'severity': 'none', 'details': 'HSTS is enabled.', 'fix': ''})
-        
-        return results
-    except Exception as e:
-        return [{'check': 'Advanced Security Headers', 'status': 'error', 'severity': 'info', 'details': f'Failed to verify headers: {str(e)}', 'fix': ''}]
-
 def check_exposed_files(url):
     base_url = url.rstrip('/')
     results = []
@@ -287,20 +261,89 @@ def check_exposed_files(url):
         env_resp = requests.get(base_url + '/.env', timeout=5, allow_redirects=False)
         if env_resp.status_code == 200 and 'DB_' in env_resp.text:
             results.append({'check': 'Exposed Secrets (.env)', 'status': 'fail', 'severity': 'critical', 'details': '.env configuration file is publicly exposed!', 'fix': 'Deny access to dotfiles located in the root web directory.'})
-    except:
-        pass
-        
+    except requests.RequestException as e:
+        logger.debug(f"/.env probe failed for {base_url}: {e}")
+
     try:
         git_resp = requests.get(base_url + '/.git/config', timeout=5, allow_redirects=False)
         if git_resp.status_code == 200 and '[core]' in git_resp.text:
             results.append({'check': 'Exposed Codebase (.git)', 'status': 'fail', 'severity': 'critical', 'details': 'Git configuration folder is publicly exposed!', 'fix': 'Deny access to the .git directory immediately.'})
-    except:
-        pass
+    except requests.RequestException as e:
+        logger.debug(f"/.git probe failed for {base_url}: {e}")
 
     if not results:
         results.append({'check': 'Sensitive Files Exposure', 'status': 'pass', 'severity': 'none', 'details': 'No common sensitive configuration files (.env, .git) exposed.', 'fix': ''})
         
     return results
+
+# ─── Free data-breach history (XposedOrNot — replaces paid HaveIBeenPwned) ───
+_BREACH_CACHE = {'data': None, 'ts': 0.0}
+_BREACH_TTL   = 3600  # seconds — the breach corpus changes slowly; cache it
+
+
+def _get_all_breaches():
+    """Fetch (and cache) the full XposedOrNot breach corpus. Free, no API key."""
+    import time
+    now = time.time()
+    if _BREACH_CACHE['data'] is not None and now - _BREACH_CACHE['ts'] < _BREACH_TTL:
+        return _BREACH_CACHE['data']
+
+    resp = requests.get(
+        'https://api.xposedornot.com/v1/breaches',
+        timeout=10,
+        headers={'User-Agent': 'PRAWL/1.0'},
+    )
+    resp.raise_for_status()
+    data = resp.json().get('exposedBreaches', []) or []
+    _BREACH_CACHE.update(data=data, ts=now)
+    return data
+
+
+def check_breach_history(hostname):
+    """
+    Check whether the scanned domain appears in any known public data breach,
+    using the free XposedOrNot breaches API (no key required).
+    """
+    result = {'check': 'Data Breach History', 'status': 'unknown',
+              'severity': 'info', 'details': '', 'fix': ''}
+
+    host = (hostname or '').lower().strip()
+    if host.startswith('www.'):
+        host = host[4:]
+    parts = host.split('.')
+    base_domain = '.'.join(parts[-2:]) if len(parts) >= 2 else host
+
+    try:
+        breaches = _get_all_breaches()
+        matched = [
+            b for b in breaches
+            if str(b.get('domain', '')).lower() == base_domain
+        ]
+        if matched:
+            names = ', '.join(str(b.get('breachID', '?')) for b in matched[:5])
+            total = sum(int(b.get('exposedRecords', 0) or 0) for b in matched)
+            extra = '' if len(matched) <= 5 else f' (and {len(matched) - 5} more)'
+            result.update({
+                'status': 'fail', 'severity': 'high',
+                'details': (f'Domain "{base_domain}" appears in {len(matched)} known data '
+                            f'breach(es): {names}{extra}. Approx. {total:,} records exposed.'),
+                'fix': ('Force a password reset for all users, enable 2-factor authentication, '
+                        'and review exactly what data leaked at https://xposedornot.com.'),
+            })
+        else:
+            result.update({
+                'status': 'pass', 'severity': 'none',
+                'details': f'Domain "{base_domain}" not found in known public breach databases.',
+                'fix': '',
+            })
+    except Exception as e:
+        logger.warning(f"Breach check failed for {hostname}: {e}")
+        result.update({
+            'status': 'error', 'severity': 'info',
+            'details': 'Could not reach the breach database (XposedOrNot).', 'fix': '',
+        })
+    return [result]
+
 
 def calculate_score(findings):
     score        = 100
@@ -322,7 +365,8 @@ def calculate_score(findings):
 
 
 def get_risk_level(score, findings):
-    if score >= 75: return 'LOW',      '#00d4aa'
+    # Bands match the README risk table.
+    if score >= 80: return 'LOW',      '#00d4aa'
     if score >= 60: return 'MEDIUM',   '#f59e0b'
     if score >= 40: return 'HIGH',     '#f97316'
     return                 'CRITICAL', '#ef4444'
@@ -410,8 +454,8 @@ def run_full_scan(url, language='english'):
     findings.extend(check_software_versions(url))
     findings.extend(check_cookies_secure(url))
     findings.extend(check_cors(url))
-    findings.extend(check_security_headers(url))
     findings.extend(check_exposed_files(url))
+    findings.extend(check_breach_history(hostname))
 
     score                  = calculate_score(findings)
     risk_level, risk_color = get_risk_level(score, findings)
