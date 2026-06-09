@@ -213,6 +213,18 @@ The chatbot and summary generator try providers in this order:
 
 ---
 
+## 🧪 Tests
+
+Unit tests cover the security-critical target validation (argument-injection
+defence) and the pure-Python RAG retriever:
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
+
+---
+
 ## 📄 License
 
 Built for Hackathon 2026 · Python + Flask + Groq AI

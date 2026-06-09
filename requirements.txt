@@ -10,6 +10,7 @@ anthropic>=0.28.0
 openai>=1.0.0
 neo4j>=5.14.0
 
-# Optional: better semantic RAG retrieval over scan data (pure-Python fallback
-# is used if absent). See backend/rag.py.
+# Optional: better semantic RAG retrieval over scan data.
+# The chatbot works without this (pure-Python TF-IDF fallback), but installing
+# it enables dense semantic search via the all-MiniLM-L6-v2 model. See backend/rag.py.
 # sentence-transformers>=2.2.0

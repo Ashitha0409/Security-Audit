@@ -13,7 +13,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     && rm -rf /var/lib/apt/lists/*
 
-COPY backend/requirements.txt .
+# Single source of truth for dependencies lives at the repo root.
+COPY requirements.txt .
 RUN pip install --upgrade pip \
  && pip install --prefix=/install --no-cache-dir -r requirements.txt
 
