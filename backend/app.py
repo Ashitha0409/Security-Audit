@@ -58,22 +58,51 @@ def init_db():
                 scanned_at TEXT   NOT NULL
             )
         ''')
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS compliance_history (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                domain         TEXT    NOT NULL,
+                readiness_score INTEGER NOT NULL,
+                gap_count      INTEGER NOT NULL DEFAULT 0,
+                created_at     TEXT    NOT NULL
+            )
+        ''')
+        # Add readiness_score column to scan_history if it doesn't exist (migration)
+        try:
+            conn.execute('ALTER TABLE scan_history ADD COLUMN readiness_score INTEGER DEFAULT NULL')
+        except Exception:
+            pass  # Column already exists
         conn.commit()
 
 def save_scan(result):
     try:
         with sqlite3.connect(DB_PATH) as conn:
             conn.execute(
-                'INSERT INTO scan_history (domain, url, score, risk_level, stats, scanned_at) VALUES (?,?,?,?,?,?)',
+                'INSERT INTO scan_history (domain, url, score, risk_level, stats, scanned_at, readiness_score) VALUES (?,?,?,?,?,?,?)',
                 (
                     result['hostname'],
                     result['url'],
                     result['score'],
                     result['risk_level'],
                     json.dumps(result['stats']),
-                    result['scanned_at']
+                    result['scanned_at'],
+                    result.get('compliance', {}).get('readiness_score') if result.get('compliance') else None
                 )
             )
+            # Also save to compliance_history if we have compliance data
+            compliance = result.get('compliance', {})
+            if compliance and compliance.get('readiness_score') is not None:
+                hits = compliance.get('hits', [])
+                gap_count = sum(1 for h in hits if h.get('status') == 'gap')
+                conn.execute(
+                    'INSERT INTO compliance_history (domain, readiness_score, gap_count, created_at) VALUES (?,?,?,?)',
+                    (
+                        result['hostname'],
+                        compliance['readiness_score'],
+                        gap_count,
+                        result['scanned_at']
+                    )
+                )
             conn.commit()
     except Exception as e:
         logger.warning(f"Failed to save scan history: {e}")
@@ -82,10 +111,13 @@ def get_history(domain):
     try:
         with sqlite3.connect(DB_PATH) as conn:
             rows = conn.execute(
-                'SELECT score, risk_level, scanned_at FROM scan_history WHERE domain=? ORDER BY id DESC LIMIT 20',
+                'SELECT score, risk_level, scanned_at, readiness_score FROM scan_history WHERE domain=? ORDER BY id DESC LIMIT 20',
                 (domain,)
             ).fetchall()
-            return [{'score': r[0], 'risk_level': r[1], 'scanned_at': r[2]} for r in rows]
+            return [
+                {'score': r[0], 'risk_level': r[1], 'scanned_at': r[2], 'readiness_score': r[3]}
+                for r in rows
+            ]
     except Exception as e:
         logger.warning(f"Failed to fetch scan history: {e}")
         return []

@@ -1,0 +1,140 @@
+{
+  "transitions": [
+    {
+      "transition_id": "git_to_source",
+      "precondition": {"type": "finding", "id": "exposed_git_dir"},
+      "yields":       {"type": "capability", "id": "source_code_disclosure"},
+      "confidence": 0.95,
+      "capec": "CAPEC-150",
+      "attack": "T1213",
+      "rationale": "An exposed .git directory lets an attacker reconstruct full source code and commit history using tools like git-dumper."
+    },
+    {
+      "transition_id": "env_to_secrets",
+      "precondition": {"type": "finding", "id": "exposed_env_file"},
+      "yields":       {"type": "capability", "id": "leaked_db_credentials"},
+      "confidence": 0.85,
+      "capec": "CAPEC-637",
+      "attack": "T1552",
+      "rationale": "An exposed .env file almost always contains database connection strings, API keys, and plaintext passwords."
+    },
+    {
+      "transition_id": "source_to_creds",
+      "precondition": {"type": "capability", "id": "source_code_disclosure"},
+      "yields":       {"type": "capability", "id": "leaked_db_credentials"},
+      "confidence": 0.55,
+      "requires_evidence": "credential_pattern_in_source",
+      "capec": "CAPEC-637",
+      "attack": "T1552",
+      "rationale": "Source code often contains hardcoded database credentials, connection strings, or API keys in configuration files."
+    },
+    {
+      "transition_id": "creds_plus_port_to_dbaccess",
+      "precondition": {"type": "all_of", "ids": ["leaked_db_credentials", "open_port_mysql"]},
+      "yields":       {"type": "capability", "id": "database_access"},
+      "confidence": 0.90,
+      "capec": "CAPEC-555",
+      "attack": "T1078",
+      "rationale": "Leaked credentials combined with a reachable MySQL port gives an attacker direct authenticated database access."
+    },
+    {
+      "transition_id": "creds_plus_pg_to_dbaccess",
+      "precondition": {"type": "all_of", "ids": ["leaked_db_credentials", "open_port_postgres"]},
+      "yields":       {"type": "capability", "id": "database_access"},
+      "confidence": 0.90,
+      "capec": "CAPEC-555",
+      "attack": "T1078",
+      "rationale": "Leaked credentials combined with a reachable PostgreSQL port gives an attacker direct authenticated database access."
+    },
+    {
+      "transition_id": "sqli_to_dbaccess",
+      "precondition": {"type": "finding", "id": "sql_injection"},
+      "yields":       {"type": "capability", "id": "database_access"},
+      "confidence": 0.90,
+      "capec": "CAPEC-66",
+      "attack": "T1190",
+      "rationale": "SQL injection grants direct read/write access to the backing database, bypassing authentication entirely."
+    },
+    {
+      "transition_id": "mongo_open_to_dbaccess",
+      "precondition": {"type": "finding", "id": "open_port_mongodb"},
+      "yields":       {"type": "capability", "id": "database_access"},
+      "confidence": 0.80,
+      "capec": "CAPEC-555",
+      "attack": "T1190",
+      "rationale": "Internet-exposed MongoDB instances often have no authentication enabled by default, giving unauthenticated read/write access."
+    },
+    {
+      "transition_id": "redis_open_to_dbaccess",
+      "precondition": {"type": "finding", "id": "open_port_redis"},
+      "yields":       {"type": "capability", "id": "database_access"},
+      "confidence": 0.75,
+      "capec": "CAPEC-555",
+      "attack": "T1190",
+      "rationale": "Internet-exposed Redis instances are commonly unauthenticated and store session data or cached personal information."
+    },
+    {
+      "transition_id": "dbaccess_to_pii_breach",
+      "precondition": {"type": "capability", "id": "database_access"},
+      "yields":       {"type": "impact", "id": "customer_pii_breach"},
+      "confidence": 0.90,
+      "capec": "CAPEC-545",
+      "attack": "T1530",
+      "rationale": "Database access enables full exfiltration of customer personal data including names, contacts, payment information, and transaction history."
+    },
+    {
+      "transition_id": "missing_csp_to_xss",
+      "precondition": {"type": "finding", "id": "missing_csp"},
+      "yields":       {"type": "capability", "id": "stored_xss"},
+      "confidence": 0.45,
+      "capec": "CAPEC-592",
+      "attack": "T1059",
+      "rationale": "Absence of Content-Security-Policy significantly raises the exploitability of any existing XSS vulnerability by allowing arbitrary script execution."
+    },
+    {
+      "transition_id": "xss_to_session_hijack",
+      "precondition": {"type": "capability", "id": "stored_xss"},
+      "yields":       {"type": "capability", "id": "session_hijack"},
+      "confidence": 0.60,
+      "capec": "CAPEC-593",
+      "attack": "T1539",
+      "rationale": "Stored XSS can inject a script that steals session cookies or authentication tokens from any user visiting the affected page."
+    },
+    {
+      "transition_id": "session_to_account_takeover",
+      "precondition": {"type": "capability", "id": "session_hijack"},
+      "yields":       {"type": "capability", "id": "account_takeover"},
+      "confidence": 0.70,
+      "capec": "CAPEC-593",
+      "attack": "T1078",
+      "rationale": "A stolen session token allows the attacker to impersonate the victim user and take over their account without knowing the password."
+    },
+    {
+      "transition_id": "takeover_to_pii_breach",
+      "precondition": {"type": "capability", "id": "account_takeover"},
+      "yields":       {"type": "impact", "id": "customer_pii_breach"},
+      "confidence": 0.65,
+      "capec": "CAPEC-545",
+      "attack": "T1530",
+      "rationale": "Account takeover of admin or privileged users provides access to customer records, order history, and personal data stored in the application."
+    },
+    {
+      "transition_id": "rdp_open_to_foothold",
+      "precondition": {"type": "finding", "id": "open_port_rdp"},
+      "yields":       {"type": "capability", "id": "server_foothold"},
+      "confidence": 0.65,
+      "capec": "CAPEC-555",
+      "attack": "T1133",
+      "rationale": "Internet-exposed RDP (port 3389) is subject to brute-force and credential-stuffing attacks; a successful login gives interactive server access."
+    },
+    {
+      "transition_id": "foothold_to_pii_breach",
+      "precondition": {"type": "capability", "id": "server_foothold"},
+      "yields":       {"type": "impact", "id": "customer_pii_breach"},
+      "confidence": 0.70,
+      "capec": "CAPEC-545",
+      "attack": "T1530",
+      "rationale": "Interactive server access allows an attacker to directly read database files, application data directories, and backups containing customer personal data."
+    }
+  ]
+}
