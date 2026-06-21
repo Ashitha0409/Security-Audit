@@ -23,6 +23,9 @@ def _pretty(label: str, data: dict):
 
 
 def main():
+    import sys
+    if hasattr(sys.stdout, 'reconfigure'):
+        sys.stdout.reconfigure(encoding='utf-8')
     print("\n🐋 Checking Docker availability...")
     status = check_docker_available()
     _pretty("Docker Status", status)

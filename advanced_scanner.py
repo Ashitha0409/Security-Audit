@@ -118,7 +118,6 @@ def run_nmap_scan(target: str) -> Dict[str, Any]:
 
     cmd = [
         "docker", "run", "--rm",
-        "--network=host",
         "instrumentisto/nmap",
         "-sV",                        # service/version detection
         "--version-intensity", "3",   # balanced speed vs accuracy
@@ -218,7 +217,6 @@ def run_nikto_scan(target: str) -> Dict[str, Any]:
 
     cmd = [
         "docker", "run", "--rm",
-        "--network=host",
         "frapsoft/nikto",
         "-h",            target,
         "-maxtime",      "90s",
@@ -323,7 +321,6 @@ def run_sqlmap_scan(target: str, test_forms: bool = True) -> Dict[str, Any]:
 
     cmd = [
         "docker", "run", "--rm",
-        "--network=host",
         "secsi/sqlmap",
         "-u",           target,
         "--batch",                  # never prompt for input
@@ -420,7 +417,6 @@ def run_whatweb_scan(target: str) -> Dict[str, Any]:
 
     cmd = [
         "docker", "run", "--rm",
-        "--network=host",
         "secsi/whatweb",
         "-a", "3", "--log-json", "-", "--quiet",
         target

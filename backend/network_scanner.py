@@ -9,7 +9,6 @@ def run_network_sweep(cidr: str) -> Dict[str, Any]:
     """
     cmd = [
         "docker", "run", "--rm",
-        "--network=host",
         "instrumentisto/nmap",
         "-n", "-F", "-T4", "--min-rate", "1000", "--max-retries", "1", "-oX", "-", 
         cidr

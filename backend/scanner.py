@@ -615,7 +615,7 @@ def run_full_scan(url, language='english'):
 
     # ── LAYER 1A: ATTACK-PATH ENGINE ─────────────────────────────────────────
     attack_graph_json = {"nodes": [], "edges": []}
-    exploit_result = {"risk": technical_score, "reachable": False,
+    exploit_result = {"risk": 100 - technical_score, "reachable": False,
                       "best_path": None, "distinct_routes": 0, "paths": []}
     attack_narrative = ""
 
@@ -674,8 +674,8 @@ def run_full_scan(url, language='english'):
         logger.warning(f"Phishing watch error: {e}")
 
     # ── LAYER 2: AI SUMMARY ──────────────────────────────────────────────────
-    # Use exploit risk as the primary score if we got a reachable path
-    final_score = exploit_result.get("risk", technical_score)
+    # Convert exploit risk (0-100 where higher is worse) to security score (100 - risk where higher is better)
+    final_score = 100 - exploit_result.get("risk", 100 - technical_score)
     risk_level, risk_color = get_risk_level(final_score, findings)
     ai_summary = generate_ai_summary(url, findings, final_score, language)
 
@@ -698,7 +698,7 @@ def run_full_scan(url, language='english'):
 
         # Feature 2 — attack-path engine
         'exploit': {
-            'risk': exploit_result.get("risk", technical_score),
+            'risk': exploit_result.get("risk", 100 - technical_score),
             'reachable': exploit_result.get("reachable", False),
             'best_path': exploit_result.get("best_path"),
             'distinct_routes': exploit_result.get("distinct_routes", 0),
