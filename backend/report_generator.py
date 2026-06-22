@@ -18,6 +18,7 @@ def generate_pdf_report(scan_result, output_dir=None):
         from reportlab.lib.enums import TA_LEFT, TA_CENTER
         from reportlab.pdfbase import pdfmetrics
         from reportlab.pdfbase.ttfonts import TTFont
+        import re
 
         # ── Unicode font registration ──────────────────────────────────────
         # Try to register a Unicode-capable font for Hindi/regional language support.
@@ -98,7 +99,21 @@ def generate_pdf_report(scan_result, output_dir=None):
             'details': 'Detailed Security Findings' if lang == 'english' else 'विस्तृत सुरक्षा निष्कर्ष',
             'fix': 'HOW TO FIX:' if lang == 'english' else 'कैसे ठीक करें:',
             'adv_title': 'Advanced Vulnerability Scan & OSINT' if lang == 'english' else 'उन्नत भेद्यता स्कैन और ओसिंट (OSINT)',
+            'compliance_title': 'DPDP Compliance Readiness' if lang == 'english' else 'डीपीडीपी अनुपालन तैयारी',
+            'dpdp_readiness': 'DPDP READINESS SCORE' if lang == 'english' else 'डीपीडीपी तैयारी स्कोर',
+            'no_compliance_gaps': 'No compliance gaps detected — good security posture.' if lang == 'english' else 'कोई अनुपालन अंतर नहीं मिला — अच्छी सुरक्षा स्थिति।',
+            'attack_title': 'Attack-Path Exploitability' if lang == 'english' else 'अटैक-पाथ शोषण क्षमता',
+            'exploit_risk': 'EXPLOITABILITY RISK' if lang == 'english' else 'शोषण जोखिम',
+            'verified_path': 'Verified attack path' if lang == 'english' else 'सत्यापित हमला पथ',
+            'no_attack_path': 'No viable attack path to a customer-data breach was found from the current findings.' if lang == 'english' else 'वर्तमान निष्कर्षों से ग्राहक-डेटा उल्लंघन तक कोई व्यवहार्य हमला पथ नहीं मिला।',
+            'phishing_title': 'Lookalike / Phishing-Domain Watch' if lang == 'english' else 'फिशिंग-डोमेन निगरानी',
+            'no_impersonators': 'No active impersonator domains detected. Continue scanning regularly.' if lang == 'english' else 'कोई सक्रिय नकलची डोमेन नहीं मिला। नियमित रूप से स्कैन जारी रखें।',
         }
+
+        def _clean(text):
+            """Strip non-BMP chars (emoji) and escape for ReportLab's XML-ish markup."""
+            text = re.sub(r'[^\u0000-\uFFFF]', '', str(text or ''))
+            return text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('\n', '<br/>')
 
         # ── Header banner ──────────────────────────────────────────────────
         # ✅ FIX: CyberShield → PRAWL
@@ -254,6 +269,127 @@ def generate_pdf_report(scan_result, output_dir=None):
                 ]))
                 story.append(fix_table)
             story.append(Spacer(1, 0.2*cm))
+
+        # ── DPDP Compliance Section (Feature 1) ─────────────────────────────
+        compliance = scan_result.get('compliance') or {}
+        if compliance:
+            story.append(Spacer(1, 0.3*cm))
+            story.append(Paragraph(t['compliance_title'], h1_style))
+
+            readiness = compliance.get('readiness_score', 100)
+            r_color = RED if readiness < 40 else (ORANGE if readiness < 60 else (YELLOW if readiness < 80 else GREEN))
+            story.append(Paragraph(
+                f'<font color="{r_color.hexval()}" size="20"><b>{readiness}/100</b></font> '
+                f'<font color="#6b7280" size="9">{t["dpdp_readiness"]}</font>',
+                ParagraphStyle('', fontName=UNICODE_FONT_BOLD, spaceAfter=8)
+            ))
+
+            hits = compliance.get('hits', [])
+            if hits:
+                for h in hits:
+                    crore = round(h.get('penalty_ceiling_inr', 0) / 10000000)
+                    hit_status = h.get('status', 'partial')
+                    status_color = RED if hit_status == 'gap' else YELLOW
+                    hit_data = [[
+                        Paragraph(
+                            f'<font color="{status_color.hexval()}"><b>{hit_status.upper()}</b></font>',
+                            ParagraphStyle('', fontName=UNICODE_FONT_BOLD, fontSize=8, alignment=TA_CENTER)
+                        ),
+                        Paragraph(
+                            f"<b>{_clean(h.get('clause', ''))}</b><br/>"
+                            f"<font size='7' color='#6b7280'>{_clean(h.get('law', ''))}</font><br/>"
+                            f"{_clean(h.get('rationale', ''))}",
+                            body_style
+                        ),
+                        Paragraph(
+                            f"up to Rs.{crore} crore",
+                            ParagraphStyle('', fontName=UNICODE_FONT, fontSize=8, alignment=TA_CENTER, textColor=GREY)
+                        ),
+                    ]]
+                    hit_table = Table(hit_data, colWidths=[2.5*cm, 11*cm, 3.5*cm])
+                    hit_table.setStyle(TableStyle([
+                        ('BACKGROUND', (0, 0), (-1, -1),
+                         colors.HexColor('#fff7f7') if hit_status == 'gap' else colors.HexColor('#fffbf0')),
+                        ('PADDING',    (0, 0), (-1, -1), 8),
+                        ('VALIGN',     (0, 0), (-1, -1), 'TOP'),
+                        ('BOX',        (0, 0), (-1, -1), 0.5, colors.HexColor('#e5e7eb')),
+                    ]))
+                    story.append(hit_table)
+                    story.append(Spacer(1, 0.15*cm))
+            else:
+                story.append(Paragraph(t['no_compliance_gaps'], body_style))
+
+            if compliance.get('brief'):
+                story.append(Spacer(1, 0.1*cm))
+                story.append(Paragraph(_clean(compliance['brief']), body_style))
+
+            if compliance.get('disclaimer'):
+                story.append(Paragraph(
+                    f"<i>{_clean(compliance['disclaimer'])}</i>",
+                    ParagraphStyle('', fontName=UNICODE_FONT, fontSize=7,
+                                   textColor=colors.HexColor('#9ca3af'), spaceBefore=4)
+                ))
+
+        # ── Attack-Path Exploitability Section (Features 2 & 3) ─────────────
+        exploit = scan_result.get('exploit') or {}
+        if exploit:
+            story.append(Spacer(1, 0.3*cm))
+            story.append(Paragraph(t['attack_title'], h1_style))
+
+            risk = exploit.get('risk', 0)
+            risk_color = RED if risk >= 80 else (ORANGE if risk >= 60 else (YELLOW if risk >= 40 else GREEN))
+            story.append(Paragraph(
+                f'<font color="{risk_color.hexval()}" size="20"><b>{risk}/100</b></font> '
+                f'<font color="#6b7280" size="9">{t["exploit_risk"]}</font>',
+                ParagraphStyle('', fontName=UNICODE_FONT_BOLD, spaceAfter=8)
+            ))
+
+            best_path = exploit.get('best_path')
+            if exploit.get('reachable') and best_path:
+                path_str = ' &rarr; '.join(_clean(n) for n in best_path.get('path', []))
+                story.append(Paragraph(
+                    f"<b>{t['verified_path']}:</b> {path_str} "
+                    f"<font color='#6b7280'>({int(best_path.get('confidence', 0) * 100)}% confidence)</font>",
+                    body_style
+                ))
+                if exploit.get('narrative'):
+                    story.append(Paragraph(_clean(exploit['narrative']), body_style))
+            else:
+                story.append(Paragraph(t['no_attack_path'],
+                                        ParagraphStyle('', fontName=UNICODE_FONT, fontSize=9, textColor=GREEN)))
+
+        # ── Phishing / Lookalike Domain Watch Section (Feature 4) ────────────
+        impersonators = scan_result.get('impersonators') or []
+        story.append(Spacer(1, 0.3*cm))
+        story.append(Paragraph(t['phishing_title'], h1_style))
+        if impersonators:
+            for imp in impersonators:
+                threat = imp.get('threat', 0)
+                threat_color = RED if threat >= 70 else (ORANGE if threat >= 40 else YELLOW)
+                imp_data = [[
+                    Paragraph(f"<b>{_clean(imp.get('domain', ''))}</b>",
+                              ParagraphStyle('', fontName=UNICODE_FONT_BOLD, fontSize=9)),
+                    Paragraph(
+                        f"Cert: {'Yes' if imp.get('has_cert') else 'No'} | Resolves: {'Yes' if imp.get('resolves') else 'No'}",
+                        body_style
+                    ),
+                    Paragraph(
+                        f'<font color="{threat_color.hexval()}"><b>{threat}/100</b></font>',
+                        ParagraphStyle('', fontName=UNICODE_FONT_BOLD, fontSize=9, alignment=TA_CENTER)
+                    ),
+                ]]
+                imp_table = Table(imp_data, colWidths=[6*cm, 7*cm, 4*cm])
+                imp_table.setStyle(TableStyle([
+                    ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#fff7f7')),
+                    ('PADDING',    (0, 0), (-1, -1), 8),
+                    ('VALIGN',     (0, 0), (-1, -1), 'MIDDLE'),
+                    ('BOX',        (0, 0), (-1, -1), 0.5, colors.HexColor('#e5e7eb')),
+                ]))
+                story.append(imp_table)
+                story.append(Spacer(1, 0.15*cm))
+        else:
+            story.append(Paragraph(t['no_impersonators'],
+                                    ParagraphStyle('', fontName=UNICODE_FONT, fontSize=9, textColor=GREEN)))
 
         # ── Advanced Scan OSINT / Docker Findings ──────────────────────────
         adv = scan_result.get('advanced_scan', {})

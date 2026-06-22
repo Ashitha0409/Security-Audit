@@ -553,20 +553,25 @@ def generate_fallback_summary(findings, score):
 
 def _mark_exploit_path(findings, G):
     """
-    Mark findings that appear as nodes on the attack graph.
+    Mark findings whose finding_id has an actual directed path to the goal
+    node (customer_pii_breach) in the attack graph — not merely findings
+    that exist anywhere in the graph. build_attack_graph() seeds every
+    failing/warning finding as a node regardless of whether it connects to
+    anything, so membership alone is not evidence of reachability.
     findings: list of finding dicts (mutable)
     G: networkx DiGraph
     """
     try:
-        graph_node_ids = set(G.nodes())
+        import networkx as nx
+        from attackpath.path_scorer import GOAL
+        if GOAL not in G:
+            return
         for f in findings:
-            fid = f.get('finding_id', '')
-            if fid in graph_node_ids:
-                f['on_exploit_path'] = True
-            # Also check finding_ids list (for multi-port findings)
-            for extra_fid in f.get('finding_ids', []):
-                if extra_fid in graph_node_ids:
-                    f['on_exploit_path'] = True
+            candidate_ids = [f.get('finding_id', '')] + f.get('finding_ids', [])
+            f['on_exploit_path'] = any(
+                cid and cid in G and nx.has_path(G, cid, GOAL)
+                for cid in candidate_ids
+            )
     except Exception:
         pass
 
