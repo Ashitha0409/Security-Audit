@@ -1,0 +1,217 @@
+{
+  "_note": "Study notes keyed to the VAPT syllabus (CY255TBD). 'source' lists the textbook chapter and section headings (verified against the PDF outlines supplied); summaries are paraphrased explanations, not quotations. PRAWL does not perform exploitation.",
+  "concepts": [
+    {
+      "id": "social_engineering",
+      "unit": "Unit I",
+      "title": "Social engineering",
+      "summary": "Attacks on people instead of software: phishing (fake e-mails/sites), pretexting (invented story), baiting (infected USB / free download), tailgating (following someone through a door). A pen-tester follows the same steps as an attacker: research the target, build a believable pretext, make contact, then measure who clicks, replies or hands over access. Defences are awareness training, verification procedures and technical controls.",
+      "prawl_link": "PRAWL checks the technical defences: SPF/DMARC (stops forged mail from your domain) and a look-alike domain watch (typosquats used for phishing).",
+      "related_finding_ids": [
+        "missing_dmarc",
+        "missing_spf"
+      ],
+      "source": {
+        "book": "Gray Hat Hacking",
+        "chapter": "Ch. 4 Social Engineering Attacks",
+        "sections": "How a Social Engineering Attack Works; Conducting a Social Engineering Attack; Defending Against Social Engineering Attacks"
+      }
+    },
+    {
+      "id": "recon_osint",
+      "unit": "Unit I",
+      "title": "Information gathering (reconnaissance)",
+      "summary": "The first technical phase of a test: learn the target without touching it harshly. Passive sources: DNS, certificate-transparency logs, WHOIS, search engines, public code. Active: banner grabbing, port scanning. Everything later depends on this map of hosts, software and versions.",
+      "prawl_link": "PRAWL reads DNS records, the TLS certificate, HTTP banners and robots.txt; the advanced scan lists subdomains from crt.sh certificate-transparency logs.",
+      "related_finding_ids": [
+        "software_version_disclosure",
+        "robots_hints"
+      ],
+      "source": {
+        "book": "Linux Penetration Testing Bible",
+        "chapter": "Ch. 4 Internet Information Gathering",
+        "sections": "chapter title"
+      }
+    },
+    {
+      "id": "physical_pentest",
+      "unit": "Unit II",
+      "title": "Physical penetration & insider attacks",
+      "summary": "Testing whether someone can walk into a building, plug a device into the network or clone an access badge. Common ways in: tailgating, unattended server rooms, unlocked workstations, dumpster diving. Insiders already have access, so defences are least privilege, separation of duties, logging and prompt de-provisioning.",
+      "prawl_link": "Not testable from the internet, so PRAWL lists it as out of scope instead of guessing. Access-control gaps that matter for insiders are mapped to the DPDP 'restrict access' obligation.",
+      "related_finding_ids": [
+        "open_port_ssh",
+        "open_port_rdp"
+      ],
+      "source": {
+        "book": "Gray Hat Hacking",
+        "chapter": "Ch. 5 Physical Penetration Attacks and Ch. 6 Insider Attacks",
+        "sections": "Why a Physical Penetration Is Important; Common Ways into a Building; Defending Against Insider Attacks"
+      }
+    },
+    {
+      "id": "metasploit",
+      "unit": "Unit II",
+      "title": "Metasploit framework & Meterpreter",
+      "summary": "A framework that organises exploits, payloads, auxiliary scanners and post-exploitation modules. Typical flow: pick a module, set RHOSTS/LHOST, choose a payload, run. Meterpreter is an in-memory payload offering a shell, file transfer, pivoting and credential dumping. Resource scripts automate repeatable sequences.",
+      "prawl_link": "PRAWL never runs exploits. It does flag CVEs that are on the CISA Known Exploited list, which are the ones attackers already weaponise.",
+      "related_finding_ids": [
+        "known_cve_software"
+      ],
+      "source": {
+        "book": "Gray Hat Hacking",
+        "chapter": "Ch. 8 Using Metasploit",
+        "sections": "Using the Metasploit Console to Launch Exploits; Penetration Testing with Metasploit's Meterpreter; Automating and Scripting Metasploit"
+      }
+    },
+    {
+      "id": "pentest_planning",
+      "unit": "Unit III",
+      "title": "Planning, executing and reporting a penetration test",
+      "summary": "Planning fixes the scope (what is in/out), the rules of engagement (hours, allowed techniques, emergency contact) and written authorisation. Execution follows information gathering, vulnerability analysis, exploitation and post-exploitation. Information sharing keeps the client informed during the test. The report has an executive summary, technical findings with evidence, risk ratings and prioritised remediation.",
+      "prawl_link": "Each scan shows its scope, rules of engagement, which phases ran and which did not, plus a prioritised remediation plan.",
+      "related_finding_ids": [],
+      "source": {
+        "book": "Gray Hat Hacking; Penetration Testing For Dummies",
+        "chapter": "Gray Hat Ch. 9 Managing a Penetration Test; Dummies Ch. 9 Preparing, Ch. 10 Conducting, Ch. 11 Reporting",
+        "sections": "Planning a Penetration Test; Execution; Information Sharing During a Penetration Test; Reporting the Results"
+      }
+    },
+    {
+      "id": "stack_buffer_overflow",
+      "unit": "Unit III",
+      "title": "Stack operations & buffer overflows",
+      "summary": "Each function call pushes a stack frame: arguments, the saved return address and local buffers. Writing past the end of a local buffer (e.g. unchecked strcpy) overwrites the saved return address; when the function returns, the CPU jumps where the attacker chose. Local buffer-overflow exploits use this to run shellcode or to reuse existing code (return-to-libc, ROP). Fixes: bounds-checked APIs, stack canaries, DEP/NX, ASLR, memory-safe languages.",
+      "prawl_link": "A web scan cannot see memory bugs, but outdated server software is where they live, so PRAWL matches disclosed versions against recent CVEs (several October 2026 critical entries are memory-corruption flaws).",
+      "related_finding_ids": [
+        "known_cve_software",
+        "software_version_disclosure"
+      ],
+      "source": {
+        "book": "Gray Hat Hacking",
+        "chapter": "Ch. 11 Basic Linux Exploits",
+        "sections": "Stack Operations; Buffer Overflows; Local Buffer Overflow Exploits"
+      }
+    },
+    {
+      "id": "exploit_dev_process",
+      "unit": "Unit III",
+      "title": "Exploit development process (Linux)",
+      "summary": "Typical order: 1) find the crash (fuzzing), 2) confirm control of the instruction pointer, 3) find the exact offset, 4) identify bad characters, 5) pick a return target, 6) add a payload, 7) test and harden against protections. Tools: gdb, pattern generators, objdump. Always done in a lab on your own systems.",
+      "prawl_link": "Out of scope for PRAWL (a non-destructive scanner). Understanding the process explains why patching promptly matters.",
+      "related_finding_ids": [],
+      "source": {
+        "book": "Gray Hat Hacking",
+        "chapter": "Ch. 11 Basic Linux Exploits",
+        "sections": "Exploit Development Process"
+      }
+    },
+    {
+      "id": "windows_seh_memory_protections",
+      "unit": "Unit III",
+      "title": "Windows exploits: SEH and memory protections",
+      "summary": "Structured Exception Handling (SEH) stores a chain of handlers on the stack; overwriting a handler record lets an attacker take control when an exception occurs. Windows defences: /GS stack cookies, SafeSEH and SEHOP (validate the handler chain), DEP (non-executable data pages), ASLR (randomised addresses). Older platforms (XP SP3, Vista, Server 2008) enforce these differently, which is why bypass techniques are version-specific.",
+      "prawl_link": "PRAWL flags exposed Windows services such as RDP and outdated IIS/ASP.NET banners; the binary-level protections themselves need a debugger, not a remote scanner.",
+      "related_finding_ids": [
+        "open_port_rdp",
+        "known_cve_software"
+      ],
+      "source": {
+        "book": "Gray Hat Hacking",
+        "chapter": "Ch. 15 Windows Exploits",
+        "sections": "Understanding Structured Exception Handling (SEH); Understanding Windows Memory Protections (XP SP3, Vista, 7, and Server 2008); Bypassing Windows Memory Protections"
+      }
+    },
+    {
+      "id": "owasp_top10",
+      "unit": "Unit IV",
+      "title": "OWASP Top 10 web application risks",
+      "summary": "A consensus list of the most critical web risks (2021 edition): Broken Access Control, Cryptographic Failures, Injection, Insecure Design, Security Misconfiguration, Vulnerable and Outdated Components, Identification and Authentication Failures, Software and Data Integrity Failures, Logging and Monitoring Failures, SSRF.",
+      "prawl_link": "Every PRAWL finding is tagged with its OWASP category and CWE id, and the report shows which categories were assessed versus not assessed.",
+      "related_finding_ids": [],
+      "source": {
+        "book": "Gray Hat Hacking; OWASP Top 10 (2021)",
+        "chapter": "Ch. 17 Web Application Security Vulnerabilities",
+        "sections": "Overview of Top Web Application Security Vulnerabilities (the 2021 category list itself is from owasp.org)"
+      }
+    },
+    {
+      "id": "injection",
+      "unit": "Unit IV",
+      "title": "Injection (SQL injection)",
+      "summary": "Untrusted input is concatenated into a query or command, so data becomes code. Classic payload: ' OR '1'='1. Variants: error-based, union-based, blind boolean/time-based. Fix with parameterised queries / prepared statements, least-privilege database accounts and input validation.",
+      "prawl_link": "The optional advanced scan runs SQLMap (with consent). A confirmed SQL injection opens a direct path to customer data in the attack-path graph.",
+      "related_finding_ids": [
+        "sql_injection"
+      ],
+      "source": {
+        "book": "Gray Hat Hacking",
+        "chapter": "Ch. 17 Web Application Security Vulnerabilities",
+        "sections": "SQL Injection Vulnerabilities"
+      }
+    },
+    {
+      "id": "xss",
+      "unit": "Unit IV",
+      "title": "Cross-site scripting (XSS)",
+      "summary": "Attacker-controlled script runs in a victim's browser: reflected (in the request), stored (saved by the site) or DOM-based. Impact: session theft, defacement, actions as the user. Fix by encoding output for its context, using HttpOnly cookies and a strict Content-Security-Policy.",
+      "prawl_link": "PRAWL sends a harmless marker containing HTML characters and reports it only if it comes back unencoded. A missing CSP alone is NOT treated as an XSS vulnerability.",
+      "related_finding_ids": [
+        "reflected_xss",
+        "missing_csp",
+        "insecure_cookies"
+      ],
+      "source": {
+        "book": "Gray Hat Hacking",
+        "chapter": "Ch. 17 Web Application Security Vulnerabilities",
+        "sections": "Cross-Site Scripting Vulnerabilities"
+      }
+    },
+    {
+      "id": "vuln_analysis",
+      "unit": "Unit IV",
+      "title": "Vulnerability analysis: passive, source-code and binary",
+      "summary": "Passive analysis observes normal traffic and responses without attacking (headers, cookies, comments, versions). Source-code analysis reads code or served HTML/JS for dangerous patterns. Binary analysis inspects compiled programs (disassembly, fuzzing) when source is unavailable.",
+      "prawl_link": "Passive: header, cookie, banner and TLS checks. Source analysis: landing-page HTML (mixed content, forms, comments). Binary analysis is not applicable to a hosted website.",
+      "related_finding_ids": [
+        "mixed_content",
+        "login_form_over_http"
+      ],
+      "source": {
+        "book": "Gray Hat Hacking",
+        "chapter": "Ch. 20 Passive Analysis",
+        "sections": "Source Code Analysis; Binary Analysis"
+      }
+    },
+    {
+      "id": "client_side_exploits",
+      "unit": "Unit V",
+      "title": "Client-side browser exploits",
+      "summary": "Instead of attacking a server, the attacker lures a user to a page that exploits their browser or a plug-in: use-after-free, type confusion, and heap spraying (filling the heap with shellcode so a corrupted pointer lands on it). Protections: automatic updates, sandboxing, site isolation, DEP/ASLR, and CSP on your own site so it cannot be turned into a delivery vehicle.",
+      "prawl_link": "PRAWL checks your CSP/XFO headers and third-party script integrity, the controls that stop your site from serving client-side attacks.",
+      "related_finding_ids": [
+        "missing_csp",
+        "csp_unsafe_inline",
+        "missing_x_frame_options"
+      ],
+      "source": {
+        "book": "Gray Hat Hacking",
+        "chapter": "Ch. 23 Client-Side Browser Exploits",
+        "sections": "Heap Spray to Exploit; Protecting Yourself from Client-Side Exploits"
+      }
+    },
+    {
+      "id": "malware_honeypots",
+      "unit": "Unit V",
+      "title": "Malware analysis & honeypots",
+      "summary": "Honeypots are decoy systems that record attacker behaviour and capture malware samples (low-interaction ones emulate services; high-interaction ones are real systems). Collected samples get initial analysis: static (hashes, strings, imports, packers) then dynamic (run in a sandbox and watch files, registry, network).",
+      "prawl_link": "Beyond an external scanner. PRAWL's look-alike domain watch applies the same idea defensively: it finds fake copies of your domain before customers do.",
+      "related_finding_ids": [],
+      "source": {
+        "book": "Gray Hat Hacking",
+        "chapter": "Ch. 28 Collecting Malware and Initial Analysis",
+        "sections": "Latest Trends in Honeynet Technology; Catching Malware: Setting the Trap; Initial Analysis of Malware"
+      }
+    }
+  ]
+}
