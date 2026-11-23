@@ -1013,6 +1013,19 @@
       flex-shrink: 0;
     }
 
+    .tag-row { margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; }
+    .tag-chip { font-family: var(--mono); font-size: 10px; padding: 2px 7px; border-radius: 4px;
+      border: 1px solid rgba(148,163,184,.35); color: var(--grey2); }
+    .pt-block { margin: 18px 0; }
+    .pt-block h4 { font-size: 14px; margin: 0 0 8px; }
+    .pt-block h5 { font-size: 12px; margin: 14px 0 6px; color: var(--grey2); }
+    .pt-note { font-size: 12px; color: var(--grey2); margin: 0 0 8px; line-height: 1.5; }
+    .pt-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .pt-table th, .pt-table td { text-align: left; padding: 6px 8px; border-bottom: 1px solid rgba(148,163,184,.18); vertical-align: top; }
+    .pt-list { margin: 0; padding-left: 18px; font-size: 12px; line-height: 1.6; }
+    .pt-ok { color: #22c55e; } .pt-bad { color: #ef4444; } .pt-warn { color: #f59e0b; } .pt-dim { color: var(--grey2); }
+    #pentestBody details { border-bottom: 1px solid rgba(148,163,184,.18); padding: 6px 0; font-size: 12px; }
+    #pentestBody summary { cursor: pointer; font-weight: 600; }
     .status-pass {
       background: rgba(34, 197, 94, 0.12);
       color: var(--green);
@@ -2108,6 +2121,12 @@
       <div class="attack-path-list" id="attackPathList" aria-label="Attack path text description"></div>
     </div>
 
+    <!-- PEN-TEST REPORT VIEW (score breakdown, OWASP, remediation, CVE feed, methodology, concepts) -->
+    <div id="pentestSection" class="feature-panel" style="display:none;">
+      <div class="feature-panel-title">Penetration-Test Report View</div>
+      <div id="pentestBody"></div>
+    </div>
+
     <!-- DPDP COMPLIANCE PANEL -->
     <div id="complianceSection" class="feature-panel" style="display:none;">
       <div class="feature-panel-title">DPDP Compliance Readiness</div>
@@ -2605,14 +2624,14 @@
           <div style="background:var(--dark2); border:1px solid var(--border); padding:16px; border-radius:8px;">
             <div style="display:flex; align-items:baseline; gap:12px;">
               <span style="color:var(--green); font-size:18px;">🖥️</span>
-              <strong style="color:var(--blue); font-size:16px;">${h.ip}</strong>
-              ${h.hostname ? `<span style="color:var(--grey2); font-family:var(--mono); font-size:12px;">(${h.hostname})</span>` : ''}
+              <strong style="color:var(--blue); font-size:16px;">${esc(h.ip)}</strong>
+              ${h.hostname ? `<span style="color:var(--grey2); font-family:var(--mono); font-size:12px;">(${esc(h.hostname)})</span>` : ''}
             </div>
             <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap; padding-left:30px;">
               ${h.open_ports.length === 0 ? '<span style="color:var(--grey2); font-size:12px;">No open ports identified.</span>' : ''}
               ${h.open_ports.map(p => `
                 <span style="background:rgba(14,165,233,0.1); border:1px solid rgba(14,165,233,0.3); padding:4px 10px; border-radius:6px; font-size:11px; font-family:var(--mono);">
-                  ${p.port}/${p.protocol} <strong style="color:var(--white); margin-left:6px;">${p.service.toUpperCase()}</strong>
+                  ${esc(p.port)}/${esc(p.protocol)} <strong style="color:var(--white); margin-left:6px;">${esc(String(p.service).toUpperCase())}</strong>
                 </span>
               `).join('')}
             </div>
@@ -2667,6 +2686,7 @@
 
       renderFindings(data.findings);
       renderHistoryChart(data.history || [], data.score);
+      renderPentest(data);
 
       // ── Feature 3: Attack Path Graph ──────────────────────────────────────
       const attackSection = document.getElementById('attackPathSection');
@@ -2817,6 +2837,78 @@
       document.getElementById('results-section').scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
 
+    // Escape scan-derived text (banners, HTML comments, CVE descriptions are attacker-controlled)
+    function esc(s) {
+      return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+
+    function escDeep(v) {
+      if (typeof v === 'string') return esc(v);
+      if (Array.isArray(v)) return v.map(escDeep);
+      if (v && typeof v === 'object') { const o = {}; for (const k in v) o[k] = escDeep(v[k]); return o; }
+      return v;
+    }
+
+    // ── Pen-test report view: score breakdown, OWASP coverage, methodology, remediation, CVE feed, concepts ──
+    function renderPentest(data) {
+      const sec = document.getElementById('pentestSection');
+      const body = document.getElementById('pentestBody');
+      if (!sec || !body) return;
+      const parts = [];
+
+      const bd = data.score_breakdown;
+      if (bd) {
+        const rows = (bd.deductions || []).map(d => `<tr><td>${esc(d.check)}</td><td>${esc(d.severity)}</td><td>-${d.weight}</td></tr>`).join('');
+        parts.push(`<div class="pt-block"><h4>How the score was calculated</h4>
+          <p class="pt-note">Start at 100, subtract a weight for each confirmed issue. Checks that could not run never lower the score.
+          ${bd.cap != null ? `A critical/high finding caps the score at ${bd.cap}.` : ''}</p>
+          ${rows ? `<table class="pt-table"><thead><tr><th>Issue</th><th>Severity</th><th>Points</th></tr></thead><tbody>${rows}</tbody></table>`
+            : '<p class="pt-ok">No deductions: nothing was found that reduces the score.</p>'}</div>`);
+      }
+
+      const rem = data.remediation_plan || [];
+      parts.push(`<div class="pt-block"><h4>Remediation plan (prioritised)</h4>${rem.length
+        ? `<table class="pt-table"><thead><tr><th>Priority</th><th>Issue</th><th>Fix</th></tr></thead><tbody>${rem.map(r =>
+          `<tr><td>${esc(r.priority)}</td><td>${esc(r.check)}${r.owasp ? `<br><span class="tag-chip">${esc(r.owasp)}</span>` : ''}</td><td>${esc(r.fix)}</td></tr>`).join('')}</tbody></table>`
+        : '<p class="pt-ok">Nothing to fix from this scan.</p>'}</div>`);
+
+      const ow = data.owasp_coverage || [];
+      if (ow.length) {
+        parts.push(`<div class="pt-block"><h4>OWASP Top 10 (2021) coverage</h4>
+          <p class="pt-note">"Not assessed" means PRAWL cannot test that category from outside. It does not mean the site is safe in that area.</p>
+          <table class="pt-table"><tbody>${ow.map(o => `<tr><td>${esc(o.category)}</td><td>${o.issues
+            ? `<span class="pt-bad">${o.issues} issue(s)</span>` : o.assessed ? '<span class="pt-ok">assessed, clean</span>' : '<span class="pt-dim">not assessed</span>'}</td></tr>`).join('')}</tbody></table></div>`);
+      }
+
+      const feed = data.cve_feed;
+      if (feed && feed.available) {
+        const w = feed.window || {};
+        const top = (feed.top || []).map(c => `<tr><td>${esc(c.id)}${c.kev ? ' <span class="pt-bad">KEV</span>' : ''}</td><td>${c.score == null ? '-' : esc(c.score)}</td><td>${esc((c.description || '').slice(0, 150))}</td></tr>`).join('');
+        parts.push(`<div class="pt-block"><h4>CVE intelligence: ${esc((w.start || '').slice(0, 10))} to ${esc((w.end || '').slice(0, 10))}</h4>
+          <p class="pt-note">Real data from NVD and the CISA Known Exploited Vulnerabilities catalogue (fetched ${esc(feed.fetched_at)}).
+          NVD published ${esc(feed.nvd_total_published_in_window)} CVEs in this window; CISA added ${esc(feed.kev_count)} to the actively-exploited list.
+          Your site is matched only when it discloses a software version inside a vulnerable range.</p>
+          <table class="pt-table"><thead><tr><th>CVE</th><th>CVSS</th><th>Summary</th></tr></thead><tbody>${top}</tbody></table></div>`);
+      }
+
+      const m = data.methodology;
+      if (m) {
+        parts.push(`<div class="pt-block"><h4>Methodology &amp; scope</h4>
+          <ul class="pt-list">${m.phases.map(p => `<li><b>${esc(p.phase)}</b> <span class="${p.status === 'done' ? 'pt-ok' : p.status === 'limited' ? 'pt-warn' : 'pt-dim'}">[${esc(p.status.replace('_', ' '))}]</span><br>${esc(p.detail)}</li>`).join('')}</ul>
+          <h5>Rules of engagement</h5><ul class="pt-list">${m.rules_of_engagement.map(r => `<li>${esc(r)}</li>`).join('')}</ul>
+          <h5>Not covered by this scan</h5><ul class="pt-list">${m.out_of_scope.map(r => `<li>${esc(r)}</li>`).join('')}</ul></div>`);
+      }
+
+      const cs = data.concepts || [];
+      if (cs.length) {
+        parts.push(`<div class="pt-block"><h4>Related security concepts</h4>${cs.map(c =>
+          `<details><summary>${esc(c.title)} <span class="pt-dim">(${esc(c.unit)})</span></summary><p>${esc(c.summary)}</p>${c.source ? `<p class="pt-note">Source: ${esc(c.source.book)}, ${esc(c.source.chapter)} (${esc(c.source.sections)})</p>` : ''}</details>`).join('')}</div>`);
+      }
+
+      body.innerHTML = parts.join('');
+      sec.style.display = 'block';
+    }
+
     function renderFindings(findings, filter = 'all') {
       const list = document.getElementById('findingsList');
       list.innerHTML = '';
@@ -2839,16 +2931,18 @@
         const statusLabel = { pass: '✓ PASS', fail: '✗ FAIL', warning: '⚠ WARN', info: 'ℹ INFO', error: '? ERROR' }[f.status] || f.status.toUpperCase();
         const sevColor = SEV_COLORS[f.severity] || 'var(--grey2)';
 
+        const tags = [f.owasp, f.cwe, f.cve, f.kev ? 'CISA KEV: actively exploited' : null].filter(Boolean)
+          .map(t => `<span class="tag-chip">${esc(t)}</span>`).join('');
         card.innerHTML = `
         <div class="finding-header">
           <span class="sev-dot" style="background:${sevColor};box-shadow:0 0 6px ${sevColor}40"></span>
           <span class="finding-status ${statusClass}">${statusLabel}</span>
-          <span class="finding-name">${f.check}</span>
-          <span class="finding-sev-badge">${f.severity.toUpperCase()}</span>
+          <span class="finding-name">${esc(f.check)}</span>
+          <span class="finding-sev-badge">${esc(String(f.severity).toUpperCase())}</span>
           <span class="finding-expand">▼</span>
         </div>
-        <div class="finding-details">${f.details}</div>
-        ${f.fix ? `<div class="finding-fix"><div class="finding-fix-label">// HOW TO FIX</div>${f.fix}</div>` : ''}
+        <div class="finding-details">${esc(f.details)}${tags ? `<div class="tag-row">${tags}</div>` : ''}</div>
+        ${f.fix ? `<div class="finding-fix"><div class="finding-fix-label">// HOW TO FIX</div>${esc(f.fix)}</div>` : ''}
       `;
 
         // ✅ FIX: event listener on card instead of inline onclick
@@ -3087,6 +3181,7 @@ Scan your website free at PRAWL`;
 
     // ── Render Nmap results ────────────────────────────────────────
     function renderNmap(data) {
+      data = escDeep(data);   // scan output is attacker-influenced: escape before innerHTML
       const el = document.getElementById("adv-body-nmap");
       if (data.error) { el.innerHTML = `<p style="color:#f87171">${data.error}</p>`; return; }
 
@@ -3120,6 +3215,7 @@ Scan your website free at PRAWL`;
 
     // ── Render Nikto results ───────────────────────────────────────
     function renderNikto(data) {
+      data = escDeep(data);   // scan output is attacker-influenced: escape before innerHTML
       const el = document.getElementById("adv-body-nikto");
       if (data.error) { el.innerHTML = `<p style="color:#f87171">${data.error}</p>`; return; }
 
@@ -3146,6 +3242,7 @@ Scan your website free at PRAWL`;
 
     // ── Render SQLMap results ──────────────────────────────────────
     function renderSqlmap(data) {
+      data = escDeep(data);   // scan output is attacker-influenced: escape before innerHTML
       const el = document.getElementById("adv-body-sqlmap");
 
       if (data.skipped) {
@@ -3178,6 +3275,7 @@ Scan your website free at PRAWL`;
 
     // ── Render WhatWeb results ────────────────────────────────────
     function renderWhatWeb(data) {
+      data = escDeep(data);   // scan output is attacker-influenced: escape before innerHTML
       const el = document.getElementById("adv-body-whatweb");
       if (data.error) { el.innerHTML = `<p style="color:#f87171">${data.error}</p>`; return; }
 
@@ -3200,6 +3298,7 @@ Scan your website free at PRAWL`;
 
     // ── Render OSINT results ──────────────────────────────────────
     function renderOsint(data) {
+      data = escDeep(data);   // scan output is attacker-influenced: escape before innerHTML
       const el = document.getElementById("adv-body-osint");
       if (data.error) { el.innerHTML = `<p style="color:#f87171">${data.error}</p>`; return; }
 

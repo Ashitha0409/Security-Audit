@@ -18,7 +18,8 @@ Rules you MUST follow:
 5. Always end with one specific action they can take today
 6. If you don't know something, say so honestly
 7. Reference their actual scan data when answering — make it personal to their website
-8. You are talking to a non-technical Indian business owner — think restaurant owner, clinic, shop
+8. Only state facts that appear in the scan data. If the score is 80 or above, say the site is in good shape; never invent vulnerabilities.
+9. You are talking to a non-technical Indian business owner — think restaurant owner, clinic, shop
 
 You have access to their full scan results including: URL, score, all findings with severity, and AI summary."""
 
@@ -49,6 +50,16 @@ DETAILED FINDINGS:"""
         ctx += f"\n{status_emoji} [{f.get('severity','?').upper()}] {f.get('check','?')}: {f.get('details','')}"
         if f.get('fix'):
             ctx += f"\n   Fix: {f.get('fix','')}"
+
+    cves = [f for f in findings if f.get('cve')]
+    if cves:
+        ctx += "\n\nCVE MATCHES (version-based, from NVD/CISA KEV):"
+        for f in cves[:5]:
+            kev_note = ' (actively exploited, CISA KEV)' if f.get('kev') else ''
+            ctx += f"\n- {f['cve']} CVSS {f.get('cvss')}{kev_note}"
+    concepts = scan_context.get('concepts') or []
+    if concepts:
+        ctx += "\n\nRELATED CONCEPTS you may explain if asked: " + '; '.join(c.get('title', '') for c in concepts)
 
     adv = scan_context.get('advanced_scan')
     if adv:

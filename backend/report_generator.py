@@ -391,6 +391,61 @@ def generate_pdf_report(scan_result, output_dir=None):
             story.append(Paragraph(t['no_impersonators'],
                                     ParagraphStyle('', fontName=UNICODE_FONT, fontSize=9, textColor=GREEN)))
 
+        # ── Pen-test report sections: score maths, remediation, OWASP, CVE feed, scope ──
+        small = ParagraphStyle('', fontName=UNICODE_FONT, fontSize=8.5, leading=12, textColor=colors.HexColor('#374151'))
+        bd = scan_result.get('score_breakdown') or {}
+        plan = scan_result.get('remediation_plan') or []
+        owasp = scan_result.get('owasp_coverage') or []
+        feed = scan_result.get('cve_feed') or {}
+        meth = scan_result.get('methodology') or {}
+        if bd or plan or owasp or feed.get('available') or meth:
+            story.append(Spacer(1, 0.4*cm))
+            story.append(Paragraph('Penetration-Test Report Details', h1_style))
+
+            if bd:
+                ded = bd.get('deductions') or []
+                line = ', '.join(f"{_clean(d['check'])} (-{d['weight']})" for d in ded) or 'none'
+                cap = f" Score capped at {bd['cap']} by the worst finding." if bd.get('cap') is not None else ''
+                story.append(Paragraph(
+                    f"<b>How the score was calculated:</b> 100 minus weighted deductions for confirmed issues. "
+                    f"Deductions: {line}.{cap} Checks that could not run never reduce the score.", small))
+                story.append(Spacer(1, 0.2*cm))
+
+            if plan:
+                story.append(Paragraph('<b>Remediation plan (priority order)</b>', small))
+                for item in plan[:15]:
+                    story.append(Paragraph(
+                        f"&bull; <b>{_clean(item['priority'])}</b>: {_clean(item['check'])}"
+                        f"{' [' + _clean(item['owasp']) + ', ' + _clean(item['cwe']) + ']' if item.get('owasp') else ''}"
+                        f" &mdash; {_clean(item.get('fix', ''))}", small))
+                story.append(Spacer(1, 0.2*cm))
+
+            if owasp:
+                cells = []
+                for o in owasp:
+                    state = f"{o['issues']} issue(s)" if o['issues'] else ('assessed, clean' if o['assessed'] else 'not assessed')
+                    cells.append(f"{_clean(o['category'])}: {state}")
+                story.append(Paragraph('<b>OWASP Top 10 (2021) coverage</b> ("not assessed" = cannot be tested externally; '
+                                       'it does not mean safe)', small))
+                for c in cells:
+                    story.append(Paragraph('&bull; ' + c, small))
+                story.append(Spacer(1, 0.2*cm))
+
+            if feed.get('available'):
+                w = feed['window']
+                story.append(Paragraph(
+                    f"<b>CVE intelligence {w['start'][:10]} to {w['end'][:10]}</b> (source: NVD + CISA KEV, fetched "
+                    f"{_clean(feed['fetched_at'])}). NVD published {feed.get('nvd_total_published_in_window')} CVEs in this window; "
+                    f"CISA added {feed.get('kev_count')} to its Known Exploited list. A CVE is reported against this site only "
+                    f"when a disclosed software version falls inside the vulnerable range; this is an indicator, not proof of exploitation.", small))
+                story.append(Spacer(1, 0.2*cm))
+
+            if meth:
+                story.append(Paragraph('<b>Methodology and scope</b>', small))
+                for ph in meth.get('phases', []):
+                    story.append(Paragraph(f"&bull; {_clean(ph['phase'])} [{_clean(ph['status'])}]: {_clean(ph['detail'])}", small))
+                story.append(Paragraph('<b>Not covered by this scan:</b> ' + '; '.join(_clean(x) for x in meth.get('out_of_scope', [])), small))
+
         # ── Advanced Scan OSINT / Docker Findings ──────────────────────────
         adv = scan_result.get('advanced_scan', {})
         if adv:

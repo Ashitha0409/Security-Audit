@@ -7,15 +7,58 @@
       "penalty_ceiling_inr": 2500000000,
       "description": "Data Fiduciaries must protect personal data with reasonable security safeguards to prevent a breach.",
       "triggers": {
-        "open_port_mysql":   {"weight": "high",   "note": "Database directly reachable from the internet."},
-        "open_port_postgres": {"weight": "high",   "note": "Database directly reachable from the internet."},
-        "open_port_mongodb": {"weight": "high",   "note": "Database directly reachable from the internet."},
-        "open_port_redis":   {"weight": "high",   "note": "Cache/data store directly reachable from the internet."},
-        "exposed_env_file":  {"weight": "high",   "note": "Secrets and credentials publicly exposed."},
-        "exposed_git_dir":   {"weight": "high",   "note": "Source code and history publicly exposed."},
-        "sql_injection":     {"weight": "high",   "note": "Database contents reachable via injection."},
-        "missing_hsts":      {"weight": "low",    "note": "Transport security not enforced."},
-        "insecure_cookies":  {"weight": "medium", "note": "Session data transmittable in cleartext."}
+        "open_port_mysql": {
+          "weight": "high",
+          "note": "Database directly reachable from the internet."
+        },
+        "open_port_postgres": {
+          "weight": "high",
+          "note": "Database directly reachable from the internet."
+        },
+        "open_port_mongodb": {
+          "weight": "high",
+          "note": "Database directly reachable from the internet."
+        },
+        "open_port_redis": {
+          "weight": "high",
+          "note": "Cache/data store directly reachable from the internet."
+        },
+        "exposed_env_file": {
+          "weight": "high",
+          "note": "Secrets and credentials publicly exposed."
+        },
+        "exposed_git_dir": {
+          "weight": "high",
+          "note": "Source code and history publicly exposed."
+        },
+        "sql_injection": {
+          "weight": "high",
+          "note": "Database contents reachable via injection."
+        },
+        "missing_hsts": {
+          "weight": "low",
+          "note": "Transport security not enforced."
+        },
+        "insecure_cookies": {
+          "weight": "medium",
+          "note": "Session data transmittable in cleartext."
+        },
+        "redis_unauthenticated": {
+          "weight": "high",
+          "note": "Data store answers commands without authentication."
+        },
+        "reflected_xss": {
+          "weight": "medium",
+          "note": "Unencoded input reflection can be used to steal user sessions."
+        },
+        "known_cve_software": {
+          "weight": "medium",
+          "note": "Internet-facing software version falls in a range with a published CVE."
+        },
+        "exposed_sensitive_file": {
+          "weight": "high",
+          "note": "Sensitive files (backups, dumps, config) publicly downloadable."
+        }
       },
       "amplified_if_on_exploit_path": true,
       "advisory": null
@@ -27,7 +70,10 @@
       "penalty_ceiling_inr": 2000000000,
       "description": "On a personal-data breach, notify the Data Protection Board within 72 hours and affected individuals without delay.",
       "triggers": {
-        "data_breach_history": {"weight": "high", "note": "Known historical breach — notification readiness must be proven."}
+        "data_breach_history": {
+          "weight": "high",
+          "note": "Known historical breach — notification readiness must be proven."
+        }
       },
       "amplified_if_on_exploit_path": false,
       "advisory": "readiness"
@@ -39,11 +85,38 @@
       "penalty_ceiling_inr": 2500000000,
       "description": "Personal data must be protected in transit using adequate encryption (ISO/IEC 27001 reference standard).",
       "triggers": {
-        "no_https_redirect": {"weight": "high",   "note": "HTTP traffic not redirected to HTTPS — data transmitted in cleartext."},
-        "missing_hsts":      {"weight": "medium", "note": "HSTS not set — HTTPS not enforced by browser on repeat visits."},
-        "ssl_expired":       {"weight": "high",   "note": "Expired SSL certificate breaks encrypted channel."},
-        "ssl_invalid":       {"weight": "high",   "note": "Invalid SSL certificate breaks encrypted channel."},
-        "insecure_cookies":  {"weight": "medium", "note": "Session cookies transmittable over unencrypted connections."}
+        "no_https_redirect": {
+          "weight": "high",
+          "note": "HTTP traffic not redirected to HTTPS — data transmitted in cleartext."
+        },
+        "missing_hsts": {
+          "weight": "medium",
+          "note": "HSTS not set — HTTPS not enforced by browser on repeat visits."
+        },
+        "ssl_expired": {
+          "weight": "high",
+          "note": "Expired SSL certificate breaks encrypted channel."
+        },
+        "ssl_invalid": {
+          "weight": "high",
+          "note": "Invalid SSL certificate breaks encrypted channel."
+        },
+        "insecure_cookies": {
+          "weight": "medium",
+          "note": "Session cookies transmittable over unencrypted connections."
+        },
+        "weak_tls_protocol": {
+          "weight": "medium",
+          "note": "Deprecated TLS 1.0/1.1 still accepted."
+        },
+        "login_form_over_http": {
+          "weight": "high",
+          "note": "Credentials submitted over unencrypted HTTP."
+        },
+        "mixed_content": {
+          "weight": "low",
+          "note": "HTTPS pages load resources over HTTP."
+        }
       },
       "amplified_if_on_exploit_path": true,
       "advisory": null
@@ -55,9 +128,18 @@
       "penalty_ceiling_inr": 2500000000,
       "description": "Access to personal data must be restricted to authorised personnel; internet-accessible admin interfaces violate this.",
       "triggers": {
-        "open_port_ssh":  {"weight": "medium", "note": "SSH exposed to internet — potential unauthorized remote access vector."},
-        "open_port_rdp":  {"weight": "high",   "note": "RDP exposed to internet — brute-forceable remote desktop access."},
-        "cors_wildcard":  {"weight": "medium", "note": "Wildcard CORS allows any origin to read authenticated API responses."}
+        "open_port_ssh": {
+          "weight": "medium",
+          "note": "SSH exposed to internet — potential unauthorized remote access vector."
+        },
+        "open_port_rdp": {
+          "weight": "high",
+          "note": "RDP exposed to internet — brute-forceable remote desktop access."
+        },
+        "cors_wildcard": {
+          "weight": "medium",
+          "note": "Wildcard CORS allows any origin to read authenticated API responses."
+        }
       },
       "amplified_if_on_exploit_path": true,
       "advisory": null
@@ -69,8 +151,14 @@
       "penalty_ceiling_inr": 2500000000,
       "description": "Leaked credentials or source code enabling unauthorized database access constitutes a failure of reasonable security safeguards.",
       "triggers": {
-        "exposed_env_file": {"weight": "high", "note": "Environment file with credentials is publicly accessible."},
-        "exposed_git_dir":  {"weight": "high", "note": "Git repository with potential credential history is publicly accessible."}
+        "exposed_env_file": {
+          "weight": "high",
+          "note": "Environment file with credentials is publicly accessible."
+        },
+        "exposed_git_dir": {
+          "weight": "high",
+          "note": "Git repository with potential credential history is publicly accessible."
+        }
       },
       "amplified_if_on_exploit_path": true,
       "advisory": null
@@ -82,7 +170,10 @@
       "penalty_ceiling_inr": 100000,
       "description": "Report specified cyber incidents to CERT-In within 6 hours of detection. Non-compliance: up to Rs. 1 lakh + up to 1 year imprisonment.",
       "triggers": {
-        "data_breach_history": {"weight": "high", "note": "Incident-response and 6-hour reporting capability required."}
+        "data_breach_history": {
+          "weight": "high",
+          "note": "Incident-response and 6-hour reporting capability required."
+        }
       },
       "amplified_if_on_exploit_path": false,
       "advisory": "readiness"

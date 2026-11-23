@@ -101,14 +101,69 @@ http://localhost:5000
 
 ---
 
-## 📊 Risk Scoring
+## 📊 Risk Scoring (evidence-based)
+
+Score = **100 − weighted deductions for confirmed issues**. Nothing is guessed:
+
+* Checks that could not run (timeouts, a WAF/bot-protection challenge page) are shown as *info / not assessed* and **never** lower the score. They are never reported as "passed" either.
+* Weights follow real impact: a missing `Permissions-Policy` costs 1 point, a CVE on the CISA Known-Exploited list 20, a publicly downloadable `.env` 30.
+* A critical finding caps the score at 35, a high finding at 59, so serious problems cannot hide inside a green score.
+* The attack-path engine can only lower the score further, and only from chains built from **confirmed** findings (e.g. leaked credentials + exposed DB port, unauthenticated Redis, confirmed reflected XSS + weak cookies). A missing header or an open port alone never creates an attack path.
 
 | Score | Risk Level | Color |
 |---|---|---|
-| 80 – 95 | LOW | 🟢 Green |
+| 80 – 100 | LOW | 🟢 Green |
 | 60 – 79 | MEDIUM | 🟡 Yellow |
 | 40 – 59 | HIGH | 🟠 Orange |
 | 0 – 39 | CRITICAL | 🔴 Red |
+
+A hardened, CDN-fronted site such as `chatgpt.com` scores **99/100 (green)**; the only deduction found in a passive check was the missing `Permissions-Policy` header (1 point). Every scan returns `score_breakdown` listing each deduction.
+
+---
+
+### Known limits (read before trusting a score)
+
+* **Weights, caps and colour bands are policy choices**, not statistics or an industry standard. They all live in `backend/scoring_policy.py` and are returned in every scan as `score_policy`. Attack-path "confidence" numbers in `data/attack_transitions.json` are analyst heuristics used only to rank chains.
+* **External view only.** No login, no business logic, no source review, no exploitation. A green score means *no issue was found by these checks*, not "unhackable".
+* **WAF / bot protection:** HTTP-layer checks are skipped (and said to be skipped) when the site serves a challenge page.
+* **DNS, TLS and timeouts are "unknown", never "pass" or "missing":** a DNS timeout produces an info note, not a "no DMARC" finding; a TLS 1.0/1.1 probe that cannot be run is reported as untested.
+* **CVE matching is banner-based.** Linux distributions back-port fixes without changing the version string, and NVD sometimes lists only an upper version bound; those matches are labelled *Approximate*, capped at medium severity and cannot drag the score below the green/yellow boundary on their own. KEV-listed matches are never downgraded.
+* The CVE snapshot keeps CRITICAL CVEs, CISA-KEV CVEs and CVEs for ~25 fingerprintable web-stack products, not all 17k NVD entries.
+
+---
+
+## 🧬 Real CVE intelligence (October 2026)
+
+`backend/cve_intel.py` downloads **real** data, nothing is hand-written:
+
+* **NVD CVE API 2.0**: CVEs published 2026-10-01 → 2026-10-31 (17,481 published; CRITICAL/HIGH and fingerprintable web-stack products kept)
+* **CISA Known Exploited Vulnerabilities**: 36 CVEs added to the catalogue in October 2026
+
+```bash
+python backend/cve_intel.py refresh                      # re-download October 2026
+python backend/cve_intel.py refresh 2026-11-01 2026-11-30  # any other window
+export NVD_API_KEY=...                                   # optional, faster downloads
+```
+
+Snapshot: `backend/data/cve_snapshot.json` (records source URLs + `fetched_at`). A CVE is attached to a scan **only** when the site discloses a software version (`Server`, `X-Powered-By`, generator meta, jQuery file name) that falls inside the CPE version range NVD publishes. It is an indicator, not proof of exploitation (distros back-port fixes), and the report says so. Sites that hide versions get a pass, not a guess. `GET /api/cves/recent` serves the feed.
+
+---
+
+## 🎓 Penetration-testing concepts built in (VAPT syllabus)
+
+| Syllabus topic | Where it appears |
+|---|---|
+| Unit I: social engineering, recon | SPF/DMARC check, look-alike domain watch, passive recon (DNS, TLS, banners, robots.txt, security.txt) |
+| Unit III: planning, executing, reporting a test | Scope + rules of engagement, phases performed / not performed, prioritised remediation plan (P1/P2/P3) |
+| Unit III: buffer overflows, SEH, DEP/ASLR | Concept notes (`GET /api/concepts`); version → CVE matching for memory-corruption bugs |
+| Unit IV: OWASP Top 10, injection, XSS | Every finding tagged OWASP 2021 + CWE; reflected-input marker probe; SQLMap (consented) |
+| Unit IV: passive and source-code analysis | Header/cookie/TLS checks and landing-page HTML analysis (mixed content, login over HTTP, comments) |
+| Unit V: client-side exploits, honeypots, malware analysis | CSP / XFO / SRI checks; concept notes |
+| Unit II: Metasploit, physical, insider | Listed as *out of scope* in each report; CISA KEV flag marks the CVEs attackers actually weaponise |
+
+Concept notes cite the textbook chapter and section headings (verified against the supplied PDF outlines: Gray Hat Hacking, Linux Penetration Testing Bible, Penetration Testing For Dummies).
+
+Modules: `taxonomy.py` (OWASP/CWE mapping), `engagement.py` (methodology, remediation plan, concept notes), `data/concepts.json`.
 
 ---
 

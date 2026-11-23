@@ -11,7 +11,9 @@ from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.dirname(__file__))
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))  # Add parent directory for advanced_scanner
-from scanner import run_full_scan
+from scanner import run_full_scan, ScanError
+import cve_intel
+import engagement
 from report_generator import generate_pdf_report
 from chatbot import get_chat_response
 
@@ -163,6 +165,9 @@ def scan():
         save_scan(result)
         result['history'] = get_history(hostname)
         return jsonify(result)
+    except ScanError as e:
+        logger.info(f"Scan target unreachable: {e}")
+        return jsonify({'error': str(e)}), 502
     except Exception as e:
         logger.error(f"Scan failed for {hostname}: {e}")
         return jsonify({'error': str(e)}), 500
@@ -188,6 +193,22 @@ def network_scan():
     except Exception as e:
         logger.error(f"Network scan failed for {cidr}: {e}")
         return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/cves/recent')
+def recent_cves():
+    """Real CVE intelligence (NVD + CISA KEV) for the snapshot window — October 2026 by default."""
+    limit = min(int(request.args.get('limit', 25)), 100)
+    summary = cve_intel.summarize_snapshot(limit=limit)
+    if not summary.get('available'):
+        return jsonify({'error': 'No CVE snapshot. Run: python backend/cve_intel.py refresh'}), 404
+    return jsonify(summary)
+
+
+@app.route('/api/concepts')
+def concepts():
+    """Pen-test concept notes keyed to the VAPT syllabus."""
+    return jsonify(engagement.load_concepts())
 
 
 @app.route('/history/<domain>')

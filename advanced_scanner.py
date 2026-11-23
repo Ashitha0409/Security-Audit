@@ -240,13 +240,19 @@ def _nikto_error(msg: str) -> Dict[str, Any]:
 
 
 # Severity keywords to auto-classify findings
-_NIKTO_CRITICAL_KW = ["cve-", "osvdb", "xss", "sql injection", "remote code", "rce", "directory traversal"]
+_NIKTO_CRITICAL_KW = ["cve-", "osvdb", "cross-site scripting", "sql injection", "remote code", "directory traversal"]
 _NIKTO_HIGH_KW     = ["vulnerable", "unsafe", "outdated", "dangerous", "exposed admin"]
 _NIKTO_MEDIUM_KW   = ["allowed method", "missing header", "clickjack", "disclosure", "information"]
 
 
+_NIKTO_HEADER_NOTE = re.compile(r"header (is )?(not defined|not present|not set|missing)|header found|anti-clickjacking|x-content-type-options|strict-transport-security|x-xss-protection", re.I)
+
+
 def _classify_nikto(text: str) -> str:
     t = text.lower()
+    # A note about a missing/present HTTP header must not be rated critical just because it mentions "XSS"
+    if _NIKTO_HEADER_NOTE.search(text) and "cve-" not in t and "osvdb" not in t:
+        return "medium" if ("clickjack" in t or "frame-options" in t or "strict-transport" in t) else "info"
     if any(k in t for k in _NIKTO_CRITICAL_KW):
         return "critical"
     if any(k in t for k in _NIKTO_HIGH_KW):
@@ -364,11 +370,13 @@ def _parse_sqlmap_output(output: str, target: str) -> Dict[str, Any]:
     }
 
     lower = output.lower()
-    result["injectable"] = (
-        "is vulnerable" in lower
-        or "appears to be injectable" in lower
-        or "injectable" in lower
-        and "not injectable" not in lower
+    # Positive evidence only. NB: sqlmap's NEGATIVE messages ("does not seem to be injectable",
+    # "do not appear to be injectable") contain the word "injectable", so a bare substring test is wrong.
+    result["injectable"] = bool(
+        re.search(r"parameter:[^\n]+\n\s*type:", output, re.IGNORECASE)
+        or "sqlmap identified the following injection point" in lower
+        or re.search(r"is vulnerable", lower)
+        or re.search(r"appears to be ['\"].+['\"] injectable", lower)
     )
 
     # DBMS detection
